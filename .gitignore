@@ -1,0 +1,16 @@
+# Ansible temporary and retry files
+*.retry
+/tmp/
+.ansible/
+
+# OpenShift ABI build artifacts & ISO outputs
+build/
+bin/
+
+# Sensitive credentials
+pull-secret.txt
+*.key
+*.pem
+id_rsa
+id_ecdsa
+id_ed25519

@@ -1,0 +1,7 @@
+---
+# Playbook 02: Build bootable Agent ISO image
+- name: Build OpenShift Agent-Based Installer bootable ISO
+  hosts: bastion
+  gather_facts: false
+  roles:
+    - role: abi_build_iso

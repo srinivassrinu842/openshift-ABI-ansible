@@ -1,0 +1,19 @@
+---
+# Master Orchestration Playbook: OpenShift Agent-Based Installer (ABI) Pipeline
+- name: 00 - Validate prerequisites and download OpenShift binaries
+  hosts: bastion
+  gather_facts: true
+  roles:
+    - role: abi_prereqs
+
+- name: 01 - Render install-config.yaml, agent-config.yaml, and Day-0 manifests
+  hosts: bastion
+  gather_facts: false
+  roles:
+    - role: abi_config
+
+- name: 02 - Build bootable Agent ISO image
+  hosts: bastion
+  gather_facts: false
+  roles:
+    - role: abi_build_iso
