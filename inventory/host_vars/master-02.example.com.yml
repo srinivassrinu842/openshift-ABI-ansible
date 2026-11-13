@@ -1,0 +1,29 @@
+---
+# ==============================================================================
+# Node Configuration: master-02.example.com
+# Network Mode: 802.3ad LACP Bond (bond0)
+# ==============================================================================
+role: master
+is_rendezvous: false
+
+rootDeviceHints:
+  deviceName: "/dev/sda"
+
+network_mode: "bond"
+bond_name: "bond0"
+bond_mode: "802.3ad"
+bond_lacp_rate: "fast"
+bond_miimon: 100
+
+bond_interfaces:
+  - name: "eno1"
+    mac_address: "52:54:00:aa:01:03"
+  - name: "eno2"
+    mac_address: "52:54:00:aa:01:04"
+
+ip_address: "192.168.10.12"
+prefix_length: 24
+gateway: "192.168.10.1"
+dns_servers:
+  - "192.168.10.1"
+  - "1.1.1.1"

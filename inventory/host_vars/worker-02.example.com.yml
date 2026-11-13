@@ -1,0 +1,20 @@
+---
+# ==============================================================================
+# Node Configuration: worker-02.example.com
+# Network Mode: Single NIC (non-bonding)
+# ==============================================================================
+role: worker
+
+rootDeviceHints:
+  deviceName: "/dev/sda"
+
+network_mode: "single_nic"
+interface_name: "eno1"
+mac_address: "52:54:00:bb:01:03"
+
+ip_address: "192.168.10.22"
+prefix_length: 24
+gateway: "192.168.10.1"
+dns_servers:
+  - "192.168.10.1"
+  - "1.1.1.1"

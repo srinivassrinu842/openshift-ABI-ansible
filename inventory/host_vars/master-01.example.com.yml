@@ -1,0 +1,33 @@
+---
+# ==============================================================================
+# Node Configuration: master-01.example.com (Rendezvous Node)
+# Network Mode: 802.3ad LACP Bond (bond0)
+# ==============================================================================
+role: master
+is_rendezvous: true
+
+# Disk targeting for RHCOS installation (quoted string for device names)
+rootDeviceHints:
+  deviceName: "/dev/sda"
+
+# Network Interface Configuration (NMState YAML representation)
+network_mode: "bond"
+bond_name: "bond0"
+bond_mode: "802.3ad"
+bond_lacp_rate: "fast"
+bond_miimon: 100
+
+# Slave / Member NICs for the Bond
+bond_interfaces:
+  - name: "eno1"
+    mac_address: "52:54:00:aa:01:01"
+  - name: "eno2"
+    mac_address: "52:54:00:aa:01:02"
+
+# Static IP Settings for bond0
+ip_address: "192.168.10.11"
+prefix_length: 24
+gateway: "192.168.10.1"
+dns_servers:
+  - "192.168.10.1"
+  - "1.1.1.1"
