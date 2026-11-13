@@ -1,0 +1,46 @@
+---
+# ==============================================================================
+# Tasks: Monitor Cluster Installation Completion
+# ==============================================================================
+
+- name: Assert installer working directory exists
+  ansible.builtin.stat:
+    path: "{{ installer_work_dir }}"
+  register: abi_workdir_stat
+  failed_when: not abi_workdir_stat.stat.exists
+
+- name: Monitor Agent-Based Installer bootstrap completion
+  ansible.builtin.command:
+    cmd: >
+      {{ openshift_install_binary }} agent wait-for bootstrap-complete
+      --dir={{ installer_work_dir }}
+      --log-level=info
+  register: abi_bootstrap_result
+  changed_when: false
+  failed_when: abi_bootstrap_result.rc != 0
+  async: 3600
+  poll: 30
+
+- name: Monitor Agent-Based Installer cluster installation completion
+  ansible.builtin.command:
+    cmd: >
+      {{ openshift_install_binary }} agent wait-for install-complete
+      --dir={{ installer_work_dir }}
+      --log-level=info
+  register: abi_install_result
+  changed_when: false
+  failed_when: abi_install_result.rc != 0
+  async: 5400
+  poll: 30
+
+- name: Display Cluster Access Information
+  ansible.builtin.debug:
+    msg:
+      - "=========================================================================="
+      - "           OPENSHIFT CLUSTER INSTALLATION COMPLETED SUCCESSFULLY            "
+      - "=========================================================================="
+      - "Cluster Name     : {{ cluster_name }}"
+      - "Kubeconfig Path  : {{ installer_work_dir }}/auth/kubeconfig"
+      - "Web Console URL  : https://console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}"
+      - "Admin Password   : Check {{ installer_work_dir }}/auth/kubeadmin-password"
+      - "=========================================================================="

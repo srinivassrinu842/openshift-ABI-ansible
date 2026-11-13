@@ -1,0 +1,16 @@
+---
+# ==============================================================================
+# Defaults for abi_monitor Role
+# ==============================================================================
+abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') else (playbook_dir ~ '/..') }}"
+bin_dir: "{{ abi_project_root }}/bin"
+build_dir: "{{ abi_project_root }}/build"
+installer_work_dir: "{{ build_dir }}/installer_dir"
+
+cluster_name: "ocp-prod"
+openshift_install_binary: "{{ bin_dir }}/openshift-install"
+oc_binary: "{{ bin_dir }}/oc"
+
+# Monitoring timeouts
+bootstrap_complete_timeout: "60m"
+install_complete_timeout: "90m"

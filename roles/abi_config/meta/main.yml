@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: abi_config
+  author: Sreenivas
+  description: Generates install-config.yaml, agent-config.yaml and stages Day-0 manifests
+  company: Red Hat
+  license: Apache-2.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+    - name: Fedora
+      versions:
+        - all
+    - name: MacOS
+      versions:
+        - all
+dependencies: []

@@ -1,0 +1,72 @@
+---
+# ==============================================================================
+# Tasks: Validate User Inputs, Files and Architecture
+# ==============================================================================
+
+- name: Assert control-plane node count meets OpenShift production minimum
+  ansible.builtin.assert:
+    that:
+      - groups['masters'] | length >= min_master_nodes | default(3) | int
+    fail_msg: >-
+      OpenShift production Agent-Based Installer requires at least {{ min_master_nodes | default(3) }}
+      control plane nodes. Found: {{ groups['masters'] | length }}.
+
+- name: Assert exactly one master node is designated as rendezvous node
+  ansible.builtin.assert:
+    that:
+      - (groups['masters'] | map('extract', hostvars) | selectattr('is_rendezvous', 'defined') | selectattr('is_rendezvous', 'equalto', true) | list | length) == 1
+    fail_msg: >-
+      Exactly one master node must have 'is_rendezvous: true' defined in its host_vars. Found:
+      {{ groups['masters'] | map('extract', hostvars) | selectattr('is_rendezvous', 'defined') | selectattr('is_rendezvous', 'equalto', true) | list | length }}.
+
+- name: Assert pull secret file exists
+  ansible.builtin.stat:
+    path: "{{ pull_secret_file }}"
+  register: abi_pull_secret_stat
+  failed_when: not abi_pull_secret_stat.stat.exists
+
+- name: Read and validate pull secret JSON structure
+  ansible.builtin.slurp:
+    src: "{{ pull_secret_file }}"
+  register: abi_pull_secret_raw
+
+- name: Parse pull secret content
+  ansible.builtin.set_fact:
+    abi_pull_secret_json: "{{ abi_pull_secret_raw.content | b64decode | trim }}"
+
+- name: Assert pull secret contains auths
+  ansible.builtin.assert:
+    that:
+      - (abi_pull_secret_json if abi_pull_secret_json is mapping else (abi_pull_secret_json | from_json))['auths'] is defined
+    fail_msg: "The pull secret in {{ pull_secret_file }} must be valid JSON containing an 'auths' root key."
+
+- name: Check SSH public key file or direct string
+  ansible.builtin.assert:
+    that:
+      - (ssh_public_key is defined and ssh_public_key | length > 0) or (ssh_public_key_file is defined and (ssh_public_key_file is file))
+    fail_msg: "A valid SSH public key must be provided via 'ssh_public_key' or an existing 'ssh_public_key_file'."
+
+- name: Validate network VIPs are defined
+  ansible.builtin.assert:
+    that:
+      - api_vip is defined
+      - api_vip | length > 0
+      - ingress_vip is defined
+      - ingress_vip | length > 0
+      - api_vip != ingress_vip
+    fail_msg: "'api_vip' and 'ingress_vip' must both be defined, non-empty, and unique."
+
+- name: Validate additionalTrustBundle file exists if specified
+  ansible.builtin.stat:
+    path: "{{ additional_trust_bundle_file }}"
+  register: abi_trust_bundle_stat
+  when:
+    - additional_trust_bundle_file is defined
+    - additional_trust_bundle_file | length > 0
+  failed_when: not abi_trust_bundle_stat.stat.exists
+
+- name: Validate per-node network and disk configuration
+  ansible.builtin.include_tasks: validate_node_network.yml
+  loop: "{{ groups['ocp_nodes'] }}"
+  loop_control:
+    loop_var: current_node

@@ -1,0 +1,10 @@
+---
+# ==============================================================================
+# Tasks: Pre-requisites & Environment Validation
+# ==============================================================================
+
+- name: Include input validation tasks
+  ansible.builtin.include_tasks: validate_inputs.yml
+
+- name: Include binary download tasks
+  ansible.builtin.include_tasks: download_binaries.yml

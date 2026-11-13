@@ -1,0 +1,15 @@
+---
+# ==============================================================================
+# Defaults for abi_build_iso Role
+# ==============================================================================
+abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') else (playbook_dir ~ '/..') }}"
+bin_dir: "{{ abi_project_root }}/bin"
+build_dir: "{{ abi_project_root }}/build"
+installer_work_dir: "{{ build_dir }}/installer_dir"
+iso_output_dir: "{{ build_dir }}/iso"
+
+cluster_name: "ocp-prod"
+openshift_install_binary: "{{ bin_dir }}/openshift-install"
+
+# Enable backup of rendered configs prior to installer consumption
+backup_rendered_configs: true

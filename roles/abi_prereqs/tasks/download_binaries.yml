@@ -1,0 +1,140 @@
+---
+# ==============================================================================
+# Tasks: Download openshift-install and oc binaries
+# ==============================================================================
+
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ bin_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Determine host OS and architecture for client download
+  ansible.builtin.set_fact:
+    abi_os_name: "{{ 'mac' if ansible_facts['os_family'] == 'Darwin' else 'linux' }}"
+    abi_arch_name: >-
+      {{
+        'arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64']
+        else ('amd64' if (ansible_facts['os_family'] == 'Darwin' and ansible_facts['architecture'] in ['x86_64', 'amd64']) else 'x86_64')
+      }}
+
+- name: Construct binary archive filenames
+  ansible.builtin.set_fact:
+    abi_installer_tar: "openshift-install-{{ abi_os_name }}-{{ abi_arch_name }}.tar.gz"
+    abi_client_tar: "openshift-client-{{ abi_os_name }}-{{ abi_arch_name }}.tar.gz"
+
+- name: Construct complete download URLs
+  ansible.builtin.set_fact:
+    abi_installer_url: "{{ openshift_mirror_base_url }}/{{ ocp_version }}/{{ abi_installer_tar }}"
+    abi_client_url: "{{ openshift_mirror_base_url }}/{{ ocp_version }}/{{ abi_client_tar }}"
+
+- name: Check if openshift-install already exists locally
+  ansible.builtin.stat:
+    path: "{{ bin_dir }}/openshift-install"
+  register: abi_stat_installer
+
+- name: Check if oc already exists locally
+  ansible.builtin.stat:
+    path: "{{ bin_dir }}/oc"
+  register: abi_stat_oc
+
+- name: Create temporary staging directory for binary downloads
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: ocp_bin
+  register: abi_temp_download_dir
+  when: >
+    download_binaries | bool and
+    (not abi_stat_installer.stat.exists or not abi_stat_oc.stat.exists)
+
+- name: Download openshift-install archive
+  ansible.builtin.get_url:
+    url: "{{ abi_installer_url }}"
+    dest: "{{ abi_temp_download_dir.path }}/{{ abi_installer_tar }}"
+    mode: "0644"
+    timeout: 300
+    validate_certs: false
+  register: abi_get_url_installer
+  ignore_errors: true
+  when:
+    - download_binaries | bool
+    - not abi_stat_installer.stat.exists
+
+- name: Fallback download openshift-install using curl (if get_url failed)
+  ansible.builtin.command:
+    cmd: "curl -fSL --insecure -o {{ abi_temp_download_dir.path }}/{{ abi_installer_tar }} {{ abi_installer_url }}"
+  when:
+    - download_binaries | bool
+    - not abi_stat_installer.stat.exists
+    - abi_get_url_installer is failed
+
+- name: Download openshift-client (oc) archive
+  ansible.builtin.get_url:
+    url: "{{ abi_client_url }}"
+    dest: "{{ abi_temp_download_dir.path }}/{{ abi_client_tar }}"
+    mode: "0644"
+    timeout: 300
+    validate_certs: false
+  register: abi_get_url_oc
+  ignore_errors: true
+  when:
+    - download_binaries | bool
+    - not abi_stat_oc.stat.exists
+
+- name: Fallback download openshift-client using curl (if get_url failed)
+  ansible.builtin.command:
+    cmd: "curl -fSL --insecure -o {{ abi_temp_download_dir.path }}/{{ abi_client_tar }} {{ abi_client_url }}"
+  when:
+    - download_binaries | bool
+    - not abi_stat_oc.stat.exists
+    - abi_get_url_oc is failed
+
+- name: Extract openshift-install to bin_dir
+  ansible.builtin.command:
+    cmd: "tar -xzf {{ abi_temp_download_dir.path }}/{{ abi_installer_tar }} -C {{ bin_dir }} openshift-install"
+  when:
+    - download_binaries | bool
+    - not abi_stat_installer.stat.exists
+
+- name: Extract oc and kubectl to bin_dir
+  ansible.builtin.command:
+    cmd: "tar -xzf {{ abi_temp_download_dir.path }}/{{ abi_client_tar }} -C {{ bin_dir }} oc kubectl"
+  when:
+    - download_binaries | bool
+    - not abi_stat_oc.stat.exists
+
+- name: Ensure downloaded binaries are executable
+  ansible.builtin.file:
+    path: "{{ bin_dir }}/{{ item }}"
+    mode: "0755"
+    state: file
+  loop:
+    - openshift-install
+    - oc
+  ignore_errors: true
+
+- name: Clean up temporary download directory
+  ansible.builtin.file:
+    path: "{{ abi_temp_download_dir.path }}"
+    state: absent
+  when:
+    - abi_temp_download_dir is defined
+    - abi_temp_download_dir.path is defined
+
+- name: Verify openshift-install binary executable
+  ansible.builtin.command:
+    cmd: "{{ bin_dir }}/openshift-install version"
+  register: abi_installed_installer_version
+  changed_when: false
+
+- name: Verify oc binary executable
+  ansible.builtin.command:
+    cmd: "{{ bin_dir }}/oc version --client"
+  register: abi_installed_oc_version
+  changed_when: false
+
+- name: Display Installed Tool Versions
+  ansible.builtin.debug:
+    msg:
+      - "openshift-install: {{ abi_installed_installer_version.stdout_lines[0] | default('OK') }}"
+      - "oc client        : {{ abi_installed_oc_version.stdout_lines[0] | default('OK') }}"

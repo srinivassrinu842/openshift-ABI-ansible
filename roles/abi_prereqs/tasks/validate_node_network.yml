@@ -1,0 +1,38 @@
+---
+# ==============================================================================
+# Tasks: Validate Node Network & Disk Properties (invoked per node)
+# ==============================================================================
+
+- name: "Validate static IP configuration for {{ current_node }}"
+  ansible.builtin.assert:
+    that:
+      - hostvars[current_node].ip_address is defined
+      - hostvars[current_node].ip_address | length > 0
+      - hostvars[current_node].gateway is defined
+      - hostvars[current_node].gateway | length > 0
+    fail_msg: "Node '{{ current_node }}' is missing required 'ip_address' or 'gateway'."
+
+- name: "Validate bonding configuration for {{ current_node }}"
+  ansible.builtin.assert:
+    that:
+      - hostvars[current_node].bond_name is defined
+      - hostvars[current_node].bond_mode is defined
+      - hostvars[current_node].bond_interfaces is defined
+      - hostvars[current_node].bond_interfaces | length >= 2
+    fail_msg: "Node '{{ current_node }}' has network_mode: bond but is missing bond_name, bond_mode, or has < 2 bond_interfaces."
+  when: hostvars[current_node].network_mode | default('bond') == 'bond'
+
+- name: "Validate single NIC configuration for {{ current_node }}"
+  ansible.builtin.assert:
+    that:
+      - hostvars[current_node].interface_name is defined
+      - hostvars[current_node].mac_address is defined
+    fail_msg: "Node '{{ current_node }}' has network_mode: single_nic but is missing interface_name or mac_address."
+  when: hostvars[current_node].network_mode | default('bond') == 'single_nic'
+
+- name: "Validate rootDeviceHints if declared for {{ current_node }}"
+  ansible.builtin.assert:
+    that:
+      - hostvars[current_node].rootDeviceHints is mapping
+    fail_msg: "Node '{{ current_node }}' declared rootDeviceHints but it is not a valid YAML dictionary."
+  when: hostvars[current_node].rootDeviceHints is defined

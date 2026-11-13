@@ -1,0 +1,48 @@
+---
+apiVersion: v1
+baseDomain: "{{ base_domain }}"
+metadata:
+  name: "{{ cluster_name }}"
+compute:
+  - name: worker
+    replicas: {{ groups['workers'] | default([]) | length }}
+controlPlane:
+  name: master
+  replicas: {{ groups['masters'] | length }}
+networking:
+  networkType: "{{ network_type | default('OVNKubernetes') }}"
+  clusterNetwork:
+    - cidr: "{{ cluster_network_cidr | default('10.128.0.0/14') }}"
+      hostPrefix: {{ cluster_network_host_prefix | default(23) }}
+{% if machine_network_cidr is defined and machine_network_cidr | length > 0 %}
+  machineNetwork:
+    - cidr: "{{ machine_network_cidr }}"
+{% endif %}
+  serviceNetwork:
+    - "{{ service_network_cidr | default('172.30.0.0/16') }}"
+platform:
+  baremetal:
+    apiVIPs:
+      - "{{ api_vip }}"
+    ingressVIPs:
+      - "{{ ingress_vip }}"
+{% if proxy_enabled | default(false) | bool %}
+proxy:
+{% if http_proxy is defined and http_proxy | length > 0 %}
+  httpProxy: "{{ http_proxy }}"
+{% endif %}
+{% if https_proxy is defined and https_proxy | length > 0 %}
+  httpsProxy: "{{ https_proxy }}"
+{% endif %}
+{% if abi_computed_no_proxy_list is defined and abi_computed_no_proxy_list | length > 0 %}
+  noProxy: "{{ abi_computed_no_proxy_list | join(',') }}"
+{% endif %}
+{% endif %}
+pullSecret: >-
+  {{ abi_pull_secret_content | to_json if (abi_pull_secret_content is mapping) else (abi_pull_secret_content | string | trim) }}
+sshKey: |
+  {{ abi_ssh_key_content | indent(2, first=False) }}
+{% if abi_additional_trust_bundle_content is defined and abi_additional_trust_bundle_content | length > 0 %}
+additionalTrustBundle: |
+  {{ abi_additional_trust_bundle_content | indent(2, first=False) }}
+{% endif %}

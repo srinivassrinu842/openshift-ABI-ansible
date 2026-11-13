@@ -1,0 +1,107 @@
+---
+apiVersion: v1beta1
+kind: AgentConfig
+metadata:
+  name: "{{ cluster_name }}"
+rendezvousIP: >-
+  {{
+    (
+      groups['masters']
+      | map('extract', hostvars)
+      | selectattr('is_rendezvous', 'defined')
+      | selectattr('is_rendezvous', 'equalto', true)
+      | map(attribute='ip_address')
+      | first
+    ) | default(hostvars[groups['masters'][0]]['ip_address'])
+  }}
+{% if additional_ntp_sources is defined and additional_ntp_sources | length > 0 %}
+additionalNTPSources:
+{% for ntp in additional_ntp_sources %}
+  - "{{ ntp }}"
+{% endfor %}
+{% elif ntp_servers is defined and ntp_servers | length > 0 %}
+additionalNTPSources:
+{% for ntp in ntp_servers %}
+  - "{{ ntp }}"
+{% endfor %}
+{% endif %}
+hosts:
+{% for host in groups['ocp_nodes'] %}
+{% set hvars = hostvars[host] %}
+  - hostname: "{{ host }}"
+    role: "{{ hvars.role | default('worker') }}"
+{% if hvars.rootDeviceHints is defined and hvars.rootDeviceHints %}
+    rootDeviceHints:
+{% for key, val in hvars.rootDeviceHints.items() %}
+{% if val is string %}
+      {{ key }}: "{{ val }}"
+{% else %}
+      {{ key }}: {{ val }}
+{% endif %}
+{% endfor %}
+{% endif %}
+    interfaces:
+{% if hvars.network_mode | default('bond') == 'bond' %}
+{% for iface in hvars.bond_interfaces %}
+      - name: "{{ iface.name }}"
+        macAddress: "{{ iface.mac_address | lower }}"
+{% endfor %}
+{% else %}
+      - name: "{{ hvars.interface_name | default('eth0') }}"
+        macAddress: "{{ hvars.mac_address | lower }}"
+{% endif %}
+    networkConfig:
+      raw:
+        interfaces:
+{% if hvars.network_mode | default('bond') == 'bond' %}
+          - name: "{{ hvars.bond_name | default('bond0') }}"
+            type: bond
+            state: up
+            link-aggregation:
+              mode: "{{ hvars.bond_mode | default('802.3ad') }}"
+              options:
+{% if hvars.bond_miimon is defined %}
+                miimon: "{{ hvars.bond_miimon }}"
+{% endif %}
+{% if hvars.bond_lacp_rate is defined %}
+                lacp_rate: "{{ hvars.bond_lacp_rate }}"
+{% endif %}
+              port:
+{% for iface in hvars.bond_interfaces %}
+                - "{{ iface.name }}"
+{% endfor %}
+            ipv4:
+              enabled: true
+              address:
+                - ip: "{{ hvars.ip_address }}"
+                  prefix-length: {{ hvars.prefix_length | default(24) }}
+              dhcp: false
+{% for iface in hvars.bond_interfaces %}
+          - name: "{{ iface.name }}"
+            type: ethernet
+            state: up
+{% endfor %}
+{% else %}
+          - name: "{{ hvars.interface_name | default('eth0') }}"
+            type: ethernet
+            state: up
+            ipv4:
+              enabled: true
+              address:
+                - ip: "{{ hvars.ip_address }}"
+                  prefix-length: {{ hvars.prefix_length | default(24) }}
+              dhcp: false
+{% endif %}
+        dns-resolver:
+          config:
+            server:
+{% for dns in hvars.dns_servers | default(['1.1.1.1']) %}
+              - "{{ dns }}"
+{% endfor %}
+        routes:
+          config:
+            - destination: 0.0.0.0/0
+              next-hop-address: "{{ hvars.gateway }}"
+              next-hop-interface: "{{ hvars.bond_name | default('bond0') if (hvars.network_mode | default('bond') == 'bond') else (hvars.interface_name | default('eth0')) }}"
+              table-id: 254
+{% endfor %}

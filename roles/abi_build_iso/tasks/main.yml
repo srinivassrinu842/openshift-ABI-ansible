@@ -1,0 +1,96 @@
+---
+# ==============================================================================
+# Tasks: Build Agent-Based Installer Bootable ISO Image
+# ==============================================================================
+
+- name: Assert installer binary exists and is executable
+  ansible.builtin.stat:
+    path: "{{ openshift_install_binary }}"
+  register: abi_installer_stat
+  failed_when: not abi_installer_stat.stat.exists or not abi_installer_stat.stat.executable
+
+- name: Assert installer staging directory exists with required configurations
+  ansible.builtin.stat:
+    path: "{{ installer_work_dir }}/{{ item }}"
+  loop:
+    - install-config.yaml
+    - agent-config.yaml
+  register: abi_config_stats
+  failed_when: not item.stat.exists
+
+- name: Create ISO output directory
+  ansible.builtin.file:
+    path: "{{ iso_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create configuration backup directory
+  ansible.builtin.file:
+    path: "{{ build_dir }}/config_backup_{{ '%Y%m%d%H%M%S' | strftime }}"
+    state: directory
+    mode: "0755"
+  register: abi_backup_dir
+  when: backup_rendered_configs | default(true) | bool
+
+- name: Backup rendered configurations prior to ISO creation
+  ansible.builtin.copy:
+    src: "{{ installer_work_dir }}/{{ item }}"
+    dest: "{{ abi_backup_dir.path }}/{{ item }}"
+    mode: "0600"
+    remote_src: true
+  loop:
+    - install-config.yaml
+    - agent-config.yaml
+  when:
+    - backup_rendered_configs | default(true) | bool
+    - abi_backup_dir is defined
+    - abi_backup_dir.path is defined
+
+- name: Execute 'openshift-install agent create image'
+  ansible.builtin.command:
+    cmd: >
+      {{ openshift_install_binary }} agent create image
+      --dir={{ installer_work_dir }}
+      --log-level=info
+  register: abi_create_image_result
+  changed_when: true
+  failed_when: abi_create_image_result.rc != 0
+
+- name: Locate generated agent.iso in installer directory
+  ansible.builtin.find:
+    paths: "{{ installer_work_dir }}"
+    patterns:
+      - "*.iso"
+      - "agent.*.iso"
+    file_type: file
+  register: abi_found_iso
+
+- name: Fail if no ISO image was produced
+  ansible.builtin.fail:
+    msg: "openshift-install agent create image completed but no ISO file was found in {{ installer_work_dir }}"
+  when: abi_found_iso.matched == 0
+
+- name: Move generated ISO to centralized output directory
+  ansible.builtin.copy:
+    src: "{{ abi_found_iso.files[0].path }}"
+    dest: "{{ iso_output_dir }}/{{ cluster_name }}-agent.iso"
+    mode: "0644"
+    remote_src: true
+
+- name: Record ISO file properties
+  ansible.builtin.stat:
+    path: "{{ iso_output_dir }}/{{ cluster_name }}-agent.iso"
+  register: abi_final_iso_stat
+
+- name: Display ISO Generation Summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================================================="
+      - "           OPENSHIFT AGENT-BASED INSTALLER ISO CREATED                      "
+      - "=========================================================================="
+      - "Cluster Name : {{ cluster_name }}"
+      - "ISO Location : {{ iso_output_dir }}/{{ cluster_name }}-agent.iso"
+      - "ISO Size     : {{ (abi_final_iso_stat.stat.size / 1024 / 1024) | round(2) }} MB"
+      - "Staging Dir  : {{ installer_work_dir }}"
+      - "Next Step    : Boot bare-metal nodes (starting with rendezvous node) using this ISO."
+      - "=========================================================================="

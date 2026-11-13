@@ -1,0 +1,13 @@
+---
+# ==============================================================================
+# Defaults for abi_prereqs Role
+# ==============================================================================
+abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') else (playbook_dir ~ '/..') }}"
+bin_dir: "{{ abi_project_root }}/bin"
+ocp_version: "4.22.22"
+download_binaries: true
+openshift_mirror_base_url: "https://mirror.openshift.com/pub/openshift-v4/clients/ocp"
+
+# Sane defaults for pre-flight assertions
+min_master_nodes: 3
+min_worker_nodes: 0
