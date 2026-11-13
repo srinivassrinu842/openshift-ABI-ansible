@@ -86,7 +86,7 @@ fips_enabled: false
 # Enterprise CA Certificate / Internal Registry CA (PEM format)
 # If both additional_trust_bundle_file and additional_trust_bundle_raw are empty/omitted,
 # additionalTrustBundle will NOT be included in install-config.yaml.
-additional_trust_bundle_file: "/Users/sreenichenna/Downloads/projects/RedHat/FedNet/redhat-uep.pem"
+additional_trust_bundle_file: ""
 additional_trust_bundle_raw: ""
 
 # Red Hat Pull Secret (Raw string or path to file)
