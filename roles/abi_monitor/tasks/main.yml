@@ -1,46 +1,52 @@
 ---
 # ==============================================================================
-# Tasks: Monitor Cluster Installation Completion
+# Tasks: Monitor Agent-Based Installer Cluster Progress
 # ==============================================================================
 
-- name: Assert installer working directory exists
+- name: Check if openshift-install binary is available
   ansible.builtin.stat:
-    path: "{{ installer_work_dir }}"
-  register: abi_workdir_stat
-  failed_when: not abi_workdir_stat.stat.exists
+    path: "{{ openshift_install_bin }}"
+  register: abi_check_install_bin
 
-- name: Monitor Agent-Based Installer bootstrap completion
-  ansible.builtin.command:
-    cmd: >
-      {{ openshift_install_binary }} agent wait-for bootstrap-complete
-      --dir={{ installer_work_dir }}
-      --log-level=info
-  register: abi_bootstrap_result
-  changed_when: false
-  failed_when: abi_bootstrap_result.rc != 0
-  async: 3600
-  poll: 30
+- name: Check if oc binary is available
+  ansible.builtin.stat:
+    path: "{{ oc_bin }}"
+  register: abi_check_oc_bin
 
-- name: Monitor Agent-Based Installer cluster installation completion
+- name: Assert binaries exist for cluster monitoring
+  ansible.builtin.assert:
+    that:
+      - abi_check_install_bin.stat.exists
+      - abi_check_oc_bin.stat.exists
+    fail_msg: "Required binaries openshift-install or oc not found in {{ bin_dir }}."
+
+- name: Wait for OpenShift bootstrap phase completion
   ansible.builtin.command:
-    cmd: >
-      {{ openshift_install_binary }} agent wait-for install-complete
-      --dir={{ installer_work_dir }}
-      --log-level=info
-  register: abi_install_result
+    cmd: "{{ openshift_install_bin }} agent wait-for bootstrap-complete --dir {{ abi_install_dir }} --log-level=info"
+  register: abi_bootstrap_output
   changed_when: false
-  failed_when: abi_install_result.rc != 0
-  async: 5400
-  poll: 30
+
+- name: Display Bootstrap Status
+  ansible.builtin.debug:
+    var: abi_bootstrap_output.stdout_lines
+
+- name: Wait for OpenShift cluster installation completion
+  ansible.builtin.command:
+    cmd: "{{ openshift_install_bin }} agent wait-for install-complete --dir {{ abi_install_dir }} --log-level=info"
+  register: abi_install_output
+  changed_when: false
+
+- name: Display Cluster Install Status
+  ansible.builtin.debug:
+    var: abi_install_output.stdout_lines
 
 - name: Display Cluster Access Information
   ansible.builtin.debug:
     msg:
       - "=========================================================================="
-      - "           OPENSHIFT CLUSTER INSTALLATION COMPLETED SUCCESSFULLY            "
+      - "OpenShift Cluster Installation Complete!"
       - "=========================================================================="
-      - "Cluster Name     : {{ cluster_name }}"
-      - "Kubeconfig Path  : {{ installer_work_dir }}/auth/kubeconfig"
-      - "Web Console URL  : https://console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}"
-      - "Admin Password   : Check {{ installer_work_dir }}/auth/kubeadmin-password"
+      - "Kubeconfig    : export KUBECONFIG={{ abi_install_dir }}/auth/kubeconfig"
+      - "Admin Password: {{ abi_install_dir }}/auth/kubeadmin-password"
+      - "Console URL   : Check '{{ openshift_install_bin }} agent wait-for install-complete' logs"
       - "=========================================================================="

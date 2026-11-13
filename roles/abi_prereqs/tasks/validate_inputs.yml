@@ -3,70 +3,71 @@
 # Tasks: Validate User Inputs, Files and Architecture
 # ==============================================================================
 
-- name: Assert control-plane node count meets OpenShift production minimum
+- name: Assert minimum master nodes in inventory
   ansible.builtin.assert:
     that:
-      - groups['masters'] | length >= min_master_nodes | default(3) | int
-    fail_msg: >-
-      OpenShift production Agent-Based Installer requires at least {{ min_master_nodes | default(3) }}
-      control plane nodes. Found: {{ groups['masters'] | length }}.
+      - groups['masters'] is defined
+      - groups['masters'] | length >= 3
+    fail_msg: "At least 3 master (control-plane) nodes must be defined in the inventory for high availability."
 
-- name: Assert exactly one master node is designated as rendezvous node
+- name: Assert rendezvous node is defined
   ansible.builtin.assert:
     that:
-      - (groups['masters'] | map('extract', hostvars) | selectattr('is_rendezvous', 'defined') | selectattr('is_rendezvous', 'equalto', true) | list | length) == 1
-    fail_msg: >-
-      Exactly one master node must have 'is_rendezvous: true' defined in its host_vars. Found:
-      {{ groups['masters'] | map('extract', hostvars) | selectattr('is_rendezvous', 'defined') | selectattr('is_rendezvous', 'equalto', true) | list | length }}.
+      - rendezvous_ip is defined
+      - rendezvous_ip | length > 0
+    fail_msg: "'rendezvous_ip' must be specified in group_vars/all.yml."
 
-- name: Assert pull secret file exists
-  ansible.builtin.stat:
-    path: "{{ pull_secret_file }}"
-  register: abi_pull_secret_stat
-  failed_when: not abi_pull_secret_stat.stat.exists
-
-- name: Read and validate pull secret JSON structure
-  ansible.builtin.slurp:
-    src: "{{ pull_secret_file }}"
-  register: abi_pull_secret_raw
-
-- name: Parse pull secret content
-  ansible.builtin.set_fact:
-    abi_pull_secret_json: "{{ abi_pull_secret_raw.content | b64decode | trim }}"
-
-- name: Assert pull secret contains auths
+- name: Assert rendezvous IP matches one of the master node IPs
   ansible.builtin.assert:
     that:
-      - (abi_pull_secret_json if abi_pull_secret_json is mapping else (abi_pull_secret_json | from_json))['auths'] is defined
-    fail_msg: "The pull secret in {{ pull_secret_file }} must be valid JSON containing an 'auths' root key."
+      - rendezvous_ip in (groups['masters'] | map('extract', hostvars) | map(attribute='ansible_host') | list)
+    fail_msg: "Rendezvous IP '{{ rendezvous_ip }}' must match the ansible_host of one master node."
 
-- name: Check SSH public key file or direct string
+- name: Validate Pull Secret file or raw string
   ansible.builtin.assert:
     that:
-      - (ssh_public_key is defined and ssh_public_key | length > 0) or (ssh_public_key_file is defined and (ssh_public_key_file is file))
-    fail_msg: "A valid SSH public key must be provided via 'ssh_public_key' or an existing 'ssh_public_key_file'."
+      - (pull_secret_raw is defined and pull_secret_raw | length > 0) or (pull_secret_file is defined and (lookup('file', pull_secret_file, errors='ignore') | length > 0))
+    fail_msg: "Red Hat pull secret must be provided via 'pull_secret_raw' or an existing 'pull_secret_file'."
 
-- name: Validate network VIPs are defined
+- name: Validate SSH public key file or raw string
   ansible.builtin.assert:
     that:
-      - api_vip is defined
-      - api_vip | length > 0
-      - ingress_vip is defined
-      - ingress_vip | length > 0
-      - api_vip != ingress_vip
-    fail_msg: "'api_vip' and 'ingress_vip' must both be defined, non-empty, and unique."
+      - (ssh_public_key_raw is defined and ssh_public_key_raw | length > 0) or (ssh_public_key_file is defined and (lookup('file', ssh_public_key_file, errors='ignore') | length > 0))
+    fail_msg: "SSH public key must be provided via 'ssh_public_key_raw' or an existing 'ssh_public_key_file'."
 
-- name: Validate additionalTrustBundle file exists if specified
-  ansible.builtin.stat:
-    path: "{{ additional_trust_bundle_file }}"
-  register: abi_trust_bundle_stat
+- name: Validate platform_type
+  ansible.builtin.assert:
+    that:
+      - platform_type is defined
+      - platform_type in ['baremetal', 'none']
+    fail_msg: "'platform_type' must be either 'baremetal' or 'none'."
+
+- name: Validate VIPs if platform_type is baremetal
+  ansible.builtin.assert:
+    that:
+      - api_vips is defined and api_vips | length > 0
+      - ingress_vips is defined and ingress_vips | length > 0
+    fail_msg: "'api_vips' and 'ingress_vips' are required when platform_type is 'baremetal'."
+  when: platform_type == 'baremetal'
+
+- name: Validate proxy settings if enabled
+  ansible.builtin.assert:
+    that:
+      - http_proxy is defined and http_proxy | length > 0
+    fail_msg: "'http_proxy' must be set when 'proxy_enabled' is true."
+  when: proxy_enabled | default(false) | bool
+
+- name: Validate additional trust bundle file exists if configured
+  ansible.builtin.assert:
+    that:
+      - lookup('file', additional_trust_bundle_file, errors='ignore') | length > 0
+    fail_msg: "additional_trust_bundle_file '{{ additional_trust_bundle_file }}' was specified but cannot be read."
   when:
     - additional_trust_bundle_file is defined
     - additional_trust_bundle_file | length > 0
-  failed_when: not abi_trust_bundle_stat.stat.exists
 
-- name: Validate per-node network and disk configuration
+- name: Validate per-node configuration for all nodes
   ansible.builtin.include_tasks: validate_node_network.yml
-  loop: "{{ groups['ocp_nodes'] }}"
+  loop: "{{ (groups['masters'] | default([])) + (groups['workers'] | default([])) }}"
   loop_control:
     loop_var: current_node

@@ -1,133 +1,146 @@
 ---
 # ==============================================================================
-# Tasks: Render ABI install-config.yaml, agent-config.yaml & Day-0 Manifests
+# Tasks: Render ABI Configurations and Stage Day-0 Manifests
 # ==============================================================================
 
-- name: Ensure clean installer working directory
+- name: Ensure target build and installer directories exist
   ansible.builtin.file:
-    path: "{{ installer_work_dir }}"
+    path: "{{ item }}"
     state: directory
     mode: "0755"
+  loop:
+    - "{{ abi_workspace_dir }}"
+    - "{{ abi_install_dir }}"
+    - "{{ abi_backup_dir }}"
+    - "{{ abi_install_dir }}/openshift"
 
-- name: Ensure openshift Day-0 manifest directory exists inside installer directory
+- name: Clean previous installer artifacts in staging directory
   ansible.builtin.file:
-    path: "{{ installer_work_dir }}/openshift"
-    state: directory
-    mode: "0755"
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ abi_install_dir }}/install-config.yaml"
+    - "{{ abi_install_dir }}/agent-config.yaml"
+    - "{{ abi_install_dir }}/auth"
+    - "{{ abi_install_dir }}/.openshift_install.log"
+    - "{{ abi_install_dir }}/.openshift_install_state.json"
 
-- name: Read Red Hat Pull Secret
-  ansible.builtin.slurp:
-    src: "{{ pull_secret_file }}"
-  register: abi_slurped_pull_secret
-
-- name: Parse Pull Secret Content
+- name: Retrieve Pull Secret content
   ansible.builtin.set_fact:
-    abi_pull_secret_content: "{{ abi_slurped_pull_secret.content | b64decode | trim }}"
+    abi_pull_secret_content: >-
+      {{
+        pull_secret_raw if (pull_secret_raw | default('') | length > 0)
+        else (lookup('file', pull_secret_file, rstrip=False) | default(''))
+      }}
 
-- name: Read SSH Public Key
+- name: Retrieve SSH Public Key content
   ansible.builtin.set_fact:
     abi_ssh_key_content: >-
       {{
-        ssh_public_key if (ssh_public_key is defined and ssh_public_key | length > 0)
-        else (lookup('file', ssh_public_key_file) | trim)
+        ssh_public_key_raw if (ssh_public_key_raw | default('') | length > 0)
+        else (lookup('file', ssh_public_key_file, rstrip=False) | default(''))
       }}
 
-- name: Read Additional Trust Bundle (if configured)
-  ansible.builtin.slurp:
-    src: "{{ additional_trust_bundle_file }}"
-  register: abi_slurped_trust_bundle
-  when:
-    - additional_trust_bundle_file is defined
-    - additional_trust_bundle_file | length > 0
-    - additional_trust_bundle_file is file
-
-- name: Set Additional Trust Bundle Fact
+- name: Retrieve Additional Trust Bundle content (if configured)
   ansible.builtin.set_fact:
-    abi_additional_trust_bundle_content: "{{ abi_slurped_trust_bundle.content | b64decode | trim }}"
-  when:
-    - abi_slurped_trust_bundle is defined
-    - abi_slurped_trust_bundle.content is defined
-
-- name: Calculate Default No-Proxy Domain List
-  ansible.builtin.set_fact:
-    abi_computed_no_proxy_list: >-
+    abi_trust_bundle_content: >-
       {{
-        [
-          '.cluster.local',
-          '.' ~ cluster_name ~ '.' ~ base_domain,
-          '.' ~ base_domain,
-          '127.0.0.1',
-          'localhost',
-          machine_network_cidr | default(''),
-          service_network_cidr | default('172.30.0.0/16'),
-          cluster_network_cidr | default('10.128.0.0/14')
-        ]
+        additional_trust_bundle_raw if (additional_trust_bundle_raw | default('') | length > 0)
+        else (lookup('file', additional_trust_bundle_file, rstrip=False) if (additional_trust_bundle_file | default('') | length > 0) else '')
+      }}
+
+- name: Compute proxy noProxy list including mandatory default domains
+  ansible.builtin.set_fact:
+    abi_computed_no_proxy: >-
+      {{
+        (
+          [
+            '.cluster.local',
+            '.' ~ base_domain,
+            '127.0.0.1',
+            'localhost',
+            machine_network_cidr | default(''),
+            service_network_cidr | default(''),
+            cluster_network_cidr | default('')
+          ]
+          + (custom_no_proxy | default([]))
+        )
         | reject('equalto', '')
-        | union(user_no_proxy_domains | default([]))
         | unique
+        | join(',')
       }}
   when: proxy_enabled | default(false) | bool
 
-- name: Render install-config.yaml
+- name: Render install-config.yaml into installer directory
   ansible.builtin.template:
     src: install-config.yaml.j2
-    dest: "{{ installer_work_dir }}/install-config.yaml"
+    dest: "{{ abi_install_dir }}/install-config.yaml"
     mode: "0600"
 
-- name: Render agent-config.yaml
+- name: Render agent-config.yaml into installer directory
   ansible.builtin.template:
     src: agent-config.yaml.j2
-    dest: "{{ installer_work_dir }}/agent-config.yaml"
+    dest: "{{ abi_install_dir }}/agent-config.yaml"
     mode: "0600"
 
 # ------------------------------------------------------------------------------
 # Ingest Day-0 Manifests from manifests/ directory
 # ------------------------------------------------------------------------------
-- name: Find custom Day-0 manifests in manifests directory
+- name: Check for custom Day-0 manifests in manifests directory
   ansible.builtin.find:
     paths: "{{ day0_manifests_dir }}"
     patterns:
       - "*.yaml"
       - "*.yml"
     file_type: file
-  register: abi_day0_found_manifests
+  register: abi_day0_manifest_files
   when:
     - day0_manifests_dir is defined
     - day0_manifests_dir | length > 0
-    - day0_manifests_dir is directory
 
-- name: Copy Day-0 custom manifests into <installer_work_dir>/openshift/
+- name: Copy Day-0 custom manifests into <install_dir>/openshift/
   ansible.builtin.copy:
     src: "{{ item.path }}"
-    dest: "{{ installer_work_dir }}/openshift/{{ item.path | basename }}"
+    dest: "{{ abi_install_dir }}/openshift/{{ item.path | basename }}"
     mode: "0644"
-  loop: "{{ abi_day0_found_manifests.files | default([]) }}"
+  loop: "{{ abi_day0_manifest_files.files | default([]) }}"
   loop_control:
     label: "{{ item.path | basename }}"
   when:
-    - abi_day0_found_manifests is defined
-    - abi_day0_found_manifests.matched | default(0) > 0
+    - abi_day0_manifest_files is defined
+    - abi_day0_manifest_files.matched > 0
 
-- name: List staged files in installer working directory
-  ansible.builtin.find:
-    paths: "{{ installer_work_dir }}"
-    recurse: true
-    file_type: file
-  register: abi_staged_files
+- name: Backup rendered configurations to persistent directory
+  ansible.builtin.copy:
+    src: "{{ abi_install_dir }}/{{ item }}"
+    dest: "{{ abi_backup_dir }}/{{ item }}"
+    mode: "0600"
+  loop:
+    - install-config.yaml
+    - agent-config.yaml
 
-- name: Display Configuration Generation Summary
+- name: Backup staged Day-0 manifests to persistent directory
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ abi_backup_dir }}/{{ item.path | basename }}"
+    mode: "0644"
+  loop: "{{ abi_day0_manifest_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - abi_day0_manifest_files is defined
+    - abi_day0_manifest_files.matched > 0
+
+- name: Display summary of generated configurations
   ansible.builtin.debug:
     msg:
       - "=========================================================================="
-      - "                  CONFIGURATION GENERATION SUMMARY                          "
+      - "OpenShift ABI Configurations Rendered Successfully"
       - "=========================================================================="
-      - "Target Directory : {{ installer_work_dir }}"
-      - "Rendered Files   :"
-      - "  - install-config.yaml"
-      - "  - agent-config.yaml"
-      - "Staged Manifests (in openshift/) : {{ (abi_day0_found_manifests.files | default([]) | map(attribute='path') | map('basename') | list) if (abi_day0_found_manifests is defined and abi_day0_found_manifests.matched > 0) else 'None' }}"
-      - "Rendezvous Node  : {{ groups['masters'] | map('extract', hostvars) | selectattr('is_rendezvous', 'defined') | selectattr('is_rendezvous', 'equalto', true) | map(attribute='inventory_hostname') | first | default('None') }}"
-      - "Total Hosts      : {{ groups['ocp_nodes'] | length }} (Masters: {{ groups['masters'] | length }}, Workers: {{ groups['workers'] | length }})"
-      - "Proxy Enabled    : {{ proxy_enabled | default(false) }}"
-      - "Trust Bundle     : {{ 'Configured' if (abi_additional_trust_bundle_content is defined and abi_additional_trust_bundle_content | length > 0) else 'None' }}"
+      - "Install Directory : {{ abi_install_dir }}"
+      - "Backup Directory  : {{ abi_backup_dir }}"
+      - "Cluster Name      : {{ cluster_name }}.{{ base_domain }}"
+      - "Rendezvous Node   : {{ rendezvous_ip }}"
+      - "Day-0 Manifests   : {{ abi_day0_manifest_files.matched | default(0) }} manifest(s) copied into openshift/"
+      - "Next Phase        : Run playbooks/02_create_iso.yml to create bootable ISO"
       - "=========================================================================="

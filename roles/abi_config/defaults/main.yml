@@ -1,27 +1,13 @@
 ---
-# ==============================================================================
-# Defaults for abi_config Role
-# ==============================================================================
+# Defaults for abi_config role
 abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') else (playbook_dir ~ '/..') }}"
-bin_dir: "{{ abi_project_root }}/bin"
-build_dir: "{{ abi_project_root }}/build"
-installer_work_dir: "{{ build_dir }}/installer_dir"
+abi_workspace_dir: "{{ abi_project_root }}/build"
+abi_install_dir: "{{ abi_workspace_dir }}/installer_dir"
+abi_backup_dir: "{{ abi_workspace_dir }}/rendered_configs"
 
-cluster_name: "ocp-prod"
-base_domain: "example.com"
-api_vip: "192.168.10.5"
-ingress_vip: "192.168.10.6"
-machine_network_cidr: "192.168.10.0/24"
-cluster_network_cidr: "10.128.0.0/14"
-cluster_network_host_prefix: 23
-service_network_cidr: "172.30.0.0/16"
-network_type: "OVNKubernetes"
-
-proxy_enabled: false
-http_proxy: ""
-https_proxy: ""
-user_no_proxy_domains: []
-
-additional_trust_bundle_file: ""
+# Day-0 Manifests Directory: All *.yaml and *.yml files in this directory are copied to <install_dir>/openshift/
 day0_manifests_dir: "{{ abi_project_root }}/manifests"
-ntp_servers: []
+
+# Additional CA Trust Bundle file/raw
+additional_trust_bundle_file: ""
+additional_trust_bundle_raw: ""
