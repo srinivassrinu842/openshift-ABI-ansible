@@ -36,57 +36,46 @@ flowchart TD
     end
 
     subgraph Phase0 ["00_prerequisites.yml"]
-        T["Download openshift-install & oc<br/>(Arch-aware: Linux / macOS)"]
-        V["Pre-flight validations & network checks"]
+        T["Download matching openshift-install & oc"]
+        V["Validate Pull Secret, SSH key, Rendezvous IP, & NMState"]
     end
 
     subgraph Phase1 ["01_generate_configs.yml"]
-        IC["install-config.yaml<br/>(v1 BareMetal / None)"]
-        AC["agent-config.yaml<br/>(v1beta1 NMState static bonding)"]
-        D0["Day-0 manifests<br/>(manifests/*.yaml -> openshift/)"]
+        IC["Render install-config.yaml"]
+        AC["Render agent-config.yaml"]
+        D0["Render Day-0 manifests into openshift/<br/>(Custom OVN Join/Transit Subnets, Chrony)"]
+        BK["Safeguard rendered source templates in backup/"]
     end
 
     subgraph Phase2 ["02_create_iso.yml"]
-        IMG["openshift-install agent create image"]
-        ISO["build/iso/ocp-prod-agent.iso"]
+        CMD["Execute openshift-install agent create image"]
+        ISO["Output: build/iso/{{ cluster_name }}-agent.iso"]
     end
 
-    Inputs --> Phase0
-    Phase0 --> Phase1
-    Phase1 --> Phase2
-    Phase2 --> ISO
+    subgraph Phase3 ["03_wait_for_cluster.yml"]
+        MON["Monitor install-complete & retrieve kubeadmin credentials"]
+    end
+
+    Inputs --> Phase0 --> Phase1 --> Phase2 -.-> Phase3
 ```
 
 ---
 
 ## Key Features
 
-1. **Automated Binary Lifecycle**:
-   - Dynamically identifies host operating system (`Darwin` vs `Linux`) and architecture (`arm64` vs `x86_64` / `amd64`).
-   - Downloads, extracts, and validates matching versions of `openshift-install` and `oc` from Red Hat mirrors.
-   - Built-in resilient download mechanism with automatic fallback to system `curl` and POSIX `tar`.
-
-2. **Network Flexibility (NMState Bonding & Non-Bonding)**:
-   - **LACP (802.3ad)** bonding with configurable `fast` / `slow` LACP rate and miimon timers.
-   - **Active-Backup** bonding for active/standby interfaces.
-   - **Balance-XOR** for switch-assisted hash-based load balancing.
-   - **Single NIC** non-bonded interface configurations.
-
-3. **Custom Day-0 Manifest Ingestion**:
-   - Any Kubernetes/OpenShift YAML manifest placed into `manifests/` (e.g. `01-cluster-network.yaml`) is automatically injected into `<install_dir>/openshift/`.
-   - Out-of-the-box support for custom OVN-Kubernetes internal subnets (`internalJoinSubnet`, `internalTransitSwitchSubnet`).
-
-4. **Enterprise Proxy & CA Bundle**:
-   - Configurable HTTP/HTTPS proxy with **mandatory defaults** automatically injected (`.cluster.local`, `127.0.0.1`, `localhost`, `.baseDomain`, and `machineNetwork CIDR`).
-   - Custom CA certificate injection via `additionalTrustBundle`.
-   - **Clean YAML generation**: Omits proxy, trust bundle, or machineNetwork sections entirely when not defined.
-
-5. **Bare-Metal Disk Pinning (`rootDeviceHints`)**:
-   - Targets specific physical or NVMe drives (e.g., `deviceName: "/dev/sda"`, `hctl`, `wwn`, `serialNumber`, `rotational: false`).
-   - Prevents installer ambiguity across heterogeneous hardware platforms.
-
-6. **Time Synchronization (NTP)**:
-   - Upstream Chrony / NTP server injection directly into `agent-config.yaml` host rendezvous declarations.
+* **Strict Red Hat Compliance**: 100% compliant with Red Hat OpenShift Container Platform Agent-Based Installation documentation and schemas (`apiVersion: v1beta1` for `AgentConfig`).
+* **Automated Binary Lifecycle**: Automatically downloads the exact matching version of `openshift-install`, `oc`, and `kubectl` directly from official Red Hat mirrors (`mirror.openshift.com`) with OS and architecture autodetection.
+* **Production Networking (NMState)**:
+  * **Network Bonding**: LACP `802.3ad` (Mode 4), `active-backup` (Mode 1), `balance-xor` (Mode 2) with customizable `miimon` and `lacp_rate`.
+  * **Single NIC**: Non-bonded setups with static IP, netmask, gateway, and DNS servers.
+* **Custom Day-0 Network Operator**: Automatically injects custom `Network.operator.openshift.io/v1` manifests into `<install_dir>/openshift/` to support customized cluster CIDRs, host prefixes, `internalJoinSubnet`, and `internalTransitSwitchSubnet`.
+* **Enterprise Security & Governance**:
+  * Injects enterprise Root CA certs (`additionalTrustBundle`) for SSL inspection proxies and private container registries.
+  * Enterprise Egress Proxy (`httpProxy`, `httpsProxy`, `noProxy`) with automatic derivation of internal cluster CIDRs and domains.
+  * FIPS mode toggle (`fips: true | false`).
+* **Time Synchronization**: Configures NTP via `additionalNTPSources` in `agent-config.yaml` and deploys Day-0 Chrony `MachineConfig` to guarantee clock sync during etcd bootstrapping.
+* **Deterministic Disk Selection**: Employs `rootDeviceHints` (`deviceName`, `wwn`, `serialNumber`, `rotational`) to ensure CoreOS installs onto the correct drive without touching SAN/multipath data LUNs.
+* **Safe State & Template Preservation**: Preserves source configurations in `build/rendered_configs/` to protect against the installer's native behavior of deleting `install-config.yaml` and `agent-config.yaml` during ISO generation.
 
 ---
 
@@ -94,34 +83,50 @@ flowchart TD
 
 ```text
 openshift-ABI-ansible/
-├── ansible.cfg                          # Optimized Ansible configuration
-├── requirements.yml                     # Ansible Galaxy collection dependencies
-├── site.yml                             # Master orchestration playbook
-├── playbooks/
-│   ├── 00_prerequisites.yml            # Binary downloads and input sanity
-│   ├── 01_generate_configs.yml         # Template rendering & manifest staging
-│   ├── 02_create_iso.yml               # ABI image creation command
-│   └── 03_wait_for_cluster.yml         # Post-boot installation monitor
-├── manifests/
-│   └── 01-cluster-network.yaml         # Day-0 custom OVN join & transit subnets
+├── ansible.cfg                          # Optimal Ansible engine configuration
+├── requirements.yml                     # Required Ansible collections
+├── pull-secret.txt.example              # Sample pull secret file
 ├── inventory/
-│   ├── hosts.yml                        # 3 Masters, 2 Workers, 1 Bastion
+│   ├── hosts.yml                        # Node inventory (bastion, masters, workers)
 │   ├── group_vars/
-│   │   ├── all.yml                      # Global VIPs, Proxy, NTP, Mirror config
-│   │   ├── masters.yml                  # Master node definitions
-│   │   └── workers.yml                  # Worker node definitions
+│   │   ├── all.yml                      # Global cluster configuration
+│   │   ├── masters.yml                  # Control plane sizing & roles
+│   │   └── workers.yml                  # Worker node sizing & roles
 │   └── host_vars/
-│       ├── master-01.example.com.yml    # Rendezvous node (LACP bond)
-│       ├── master-02.example.com.yml    # Control plane 2 (LACP bond)
-│       ├── master-03.example.com.yml    # Control plane 3 (LACP bond)
-│       ├── worker-01.example.com.yml    # Worker 1 (Active-Backup bond)
-│       └── worker-02.example.com.yml    # Worker 2 (Single NIC)
-└── roles/
-    ├── abi_prereqs/                     # Download & pre-flight assertions
-    ├── abi_config/                      # Jinja2 templating & manifest copy
-    ├── abi_build_iso/                   # openshift-install agent create image
-    └── abi_monitor/                     # Installation completion watcher
+│       ├── master-01.example.com.yml    # Rendezvous node (Bonded 802.3ad LACP)
+│       ├── master-02.example.com.yml    # Master 02 (Bonded active-backup)
+│       ├── master-03.example.com.yml    # Master 03 (Bonded active-backup)
+│       ├── worker-01.example.com.yml    # Worker 01 (Bonded 802.3ad LACP)
+│       └── worker-02.example.com.yml    # Worker 02 (Non-bonded Single NIC)
+├── roles/
+│   ├── abi_prereqs/                     # Tool download & pre-flight assertions
+│   ├── abi_config/                      # Jinja2 rendering of install-config, agent-config, day-0
+│   ├── abi_build_iso/                   # Safe staging & openshift-install execution
+│   └── abi_monitor/                     # Installation completion monitoring & cred extraction
+├── playbooks/
+│   ├── 00_prerequisites.yml
+│   ├── 01_generate_configs.yml
+│   ├── 02_create_iso.yml
+│   └── 03_wait_for_cluster.yml
+├── site.yml                             # End-to-end master playbook
+└── README.md
 ```
+
+---
+
+## Prerequisites
+
+1. **Ansible Bastion Host**: A machine (RHEL 8/9, Fedora, or macOS/Linux) with:
+   * Python 3.9+
+   * Ansible Core $\ge$ 2.14
+2. **Red Hat Pull Secret**: Download from [console.redhat.com](https://console.redhat.com/openshift/install/pull-secret) and save to `pull-secret.txt`.
+3. **SSH Key Pair**: Standard SSH public key (e.g. `~/.ssh/id_rsa.pub`).
+4. **Network & DNS Planning**:
+   * Pre-allocated static IPs for all nodes, `apiVIP`, and `ingressVIP`.
+   * DNS records:
+     * `api.<cluster_name>.<base_domain>` $\rightarrow$ `api_vip`
+     * `api-int.<cluster_name>.<base_domain>` $\rightarrow$ `api_vip`
+     * `*.apps.<cluster_name>.<base_domain>` $\rightarrow$ `ingress_vip`
 
 ---
 
@@ -130,64 +135,70 @@ openshift-ABI-ansible/
 ### 1. Automated Tool Download
 In `inventory/group_vars/all.yml`:
 ```yaml
-ocp_version: "4.22.22"       # Or "4.16.14", "4.15.28", "latest"
-download_binaries: true      # Automatically pulls oc and openshift-install
+ocp_version: "4.16.14"               # Specify target OpenShift version
+download_binaries: true             # Automatically fetch openshift-install & oc
+bin_dir: "{{ playbook_dir }}/bin"   # Local directory where binaries are saved
 ```
-If you are air-gapped, set `download_binaries: false` and place pre-downloaded binaries into `bin/`.
 
-### 2. Virtual IPs (VIPs) & Base Domain
+### 2. Platform & Virtual IPs (VIPs)
+For bare-metal clusters with Keepalived-managed VIPs:
 ```yaml
-cluster_name: "ocp-prod"
-base_domain: "example.com"
-api_vip: "192.168.10.5"
-ingress_vip: "192.168.10.6"
-machine_network_cidr: "192.168.10.0/24"
+platform_type: "baremetal"
+api_vips:
+  - "192.168.10.5"
+ingress_vips:
+  - "192.168.10.6"
+rendezvous_ip: "192.168.10.11"      # Must match master-01 IP
 ```
+*(If using an external hardware load balancer like F5 or HAProxy, set `platform_type: "none"`).*
 
 ### 3. Network Modes: Bonding vs Single NIC
 
-#### A. 802.3ad LACP Bonding (`master-01.example.com.yml`):
+#### Option A: Network Bonding (`inventory/host_vars/master-01.example.com.yml`)
 ```yaml
 network_mode: "bond"
-bond_name: "bond0"
-bond_mode: "802.3ad"
-bond_lacp_rate: "fast"
-bond_miimon: 100
-bond_interfaces:
-  - name: "eno1"
-    mac_address: "52:54:00:aa:01:01"
-  - name: "eno2"
-    mac_address: "52:54:00:aa:01:02"
-ip_address: "192.168.10.11"
-prefix_length: 24
-gateway: "192.168.10.1"
-dns_servers:
-  - "192.168.10.1"
+bond_config:
+  name: "bond0"
+  mode: "802.3ad"                   # or "active-backup", "balance-xor"
+  options:
+    miimon: "100"
+    lacp_rate: "fast"
+  interfaces:
+    - name: "enp1s0"
+      mac: "52:54:00:10:01:01"
+    - name: "enp2s0"
+      mac: "52:54:00:10:01:02"
+  ip: "192.168.10.11"
+  prefix_length: 24
+  gateway: "192.168.10.1"
+  dns_servers:
+    - "192.168.10.1"
 ```
 
-#### B. Active-Backup Bonding (`worker-01.example.com.yml`):
-```yaml
-network_mode: "bond"
-bond_name: "bond0"
-bond_mode: "active-backup"
-bond_interfaces:
-  - name: "ens1f0"
-    mac_address: "52:54:00:bb:01:01"
-  - name: "ens1f1"
-    mac_address: "52:54:00:bb:01:02"
-ip_address: "192.168.10.21"
-```
-
-#### C. Single NIC Non-Bonding (`worker-02.example.com.yml`):
+#### Option B: Non-Bonded Single NIC (`inventory/host_vars/worker-02.example.com.yml`)
 ```yaml
 network_mode: "single_nic"
-interface_name: "eno1"
-mac_address: "52:54:00:bb:01:03"
-ip_address: "192.168.10.22"
+nic_config:
+  name: "eno1"
+  mac: "52:54:00:20:02:01"
+  ip: "192.168.10.22"
+  prefix_length: 24
+  gateway: "192.168.10.1"
+  dns_servers:
+    - "192.168.10.1"
 ```
 
-### 4. Custom Day-0 Network Operator (OVN-Kubernetes)
-Custom OVN subnets are placed in `manifests/01-cluster-network.yaml`:
+### 4. Custom Day-0 Manifests (`manifests/` Folder)
+All Day-0 custom configurations (such as the custom Network Operator CR, custom MachineConfigs, or storage operators) are managed directly by placing your YAML manifests into the project's `manifests/` folder:
+
+```text
+manifests/
+└── 01-cluster-network.yaml    # Pre-configured with custom join/transit subnets
+```
+
+Any `*.yaml` or `*.yml` file placed inside `manifests/` is automatically discovered, copied into `<install_dir>/openshift/`, and baked into the bootable ISO. No extra variables needed.
+
+The included `manifests/01-cluster-network.yaml` is pre-populated with:
 ```yaml
 apiVersion: operator.openshift.io/v1
 kind: Network
@@ -197,6 +208,8 @@ spec:
   clusterNetwork:
   - cidr: 100.96.0.0/14
     hostPrefix: 21
+  externalIP:
+    policy: {}
   networkType: OVNKubernetes
   serviceNetwork:
   - 100.100.0.0/16
@@ -206,40 +219,63 @@ spec:
       ipv4:
         internalJoinSubnet: 100.101.0.0/16
         internalTransitSwitchSubnet: 100.102.0.0/16
+status: {}
 ```
-Any additional `.yaml` files placed in `manifests/` will automatically be copied to `<install_dir>/openshift/`.
 
 ### 5. Enterprise Proxy & Trusted CA Bundle
-In `inventory/group_vars/all.yml`:
+If `proxy_enabled` is set to `false` or `http_proxy` is empty, the `proxy` block is **completely omitted** from `install-config.yaml`.
+
+When enabled, the installer automatically compiles all mandatory OpenShift `noProxy` defaults:
+```
+.cluster.local, 127.0.0.1, localhost, .<base_domain>, <base_domain>, .<cluster_fqdn>, <cluster_fqdn>, <cluster_cidr>, <service_cidr>, <machine_cidr>, <rendezvous_ip>, <api_vips>, <ingress_vips>
+```
+To append custom enterprise domains:
 ```yaml
 proxy_enabled: true
-http_proxy: "http://proxy.example.com:8080"
-https_proxy: "http://proxy.example.com:8080"
-user_no_proxy_domains:
-  - ".internal.example.com"
-
-# Path to PEM bundle:
-additional_trust_bundle_file: "/etc/pki/ca-trust/source/anchors/corp-root-ca.pem"
+http_proxy: "http://proxy.corp.example.com:8080"
+https_proxy: "http://proxy.corp.example.com:8080"
+custom_no_proxy:
+  - "corp.example.com"
+  - "internal.registry.example.com"
 ```
 
-### 6. Time Synchronization (NTP)
+For enterprise Root CA certificates, you can specify either a **file path** or a raw PEM string:
 ```yaml
-ntp_servers:
+# Specify path to your enterprise root CA certificate (or leave empty to omit)
+additional_trust_bundle_file: "{{ abi_project_root }}/manifests/ca-bundle.pem"
+```
+If neither `additional_trust_bundle_file` nor `additional_trust_bundle_raw` is specified, `additionalTrustBundle` is **completely omitted** from `install-config.yaml`.
+
+### 6. Dynamic Parameter Omission
+In production, you often want only the parameters you explicitly configured. The templates dynamically omit unmentioned parameters:
+* `machineNetwork`: If `machine_network_cidr` is empty or commented out, `machineNetwork` is omitted.
+* `additionalTrustBundle`: If no CA cert file or string is provided, `additionalTrustBundle` is omitted.
+* `proxy`: If `proxy_enabled: false` or `http_proxy` is empty, `proxy` is omitted.
+* `additionalNTPSources`: If `additional_ntp_sources` is empty or omitted, `additionalNTPSources` is omitted from `agent-config.yaml`.
+* `rootDeviceHints`: If a host in `host_vars` does not specify `root_device_hints`, it is omitted for that host.
+
+### 6. Time Synchronization (NTP / Chrony)
+```yaml
+additional_ntp_sources:
   - "192.168.10.1"
-  - "time.cloudflare.com"
+  - "time.corp.example.com"
+chrony_machineconfig_enabled: true
 ```
 
 ### 7. Disk Targeting (rootDeviceHints)
+Inside each node's `host_vars`:
 ```yaml
-rootDeviceHints:
-  deviceName: "/dev/sda"
+root_device_hints:
+  deviceName: "/dev/sda"            # or "/dev/nvme0n1"
+  # serialNumber: "WD-WCC4N0123456"
+  # rotational: false
 ```
 
 ---
 
 ## Execution Workflow
 
-### 1. Install Galaxy Requirements
+### 1. Install Collection Dependencies
 ```bash
 ansible-galaxy collection install -r requirements.yml
 ```
