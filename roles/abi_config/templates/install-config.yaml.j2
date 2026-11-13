@@ -1,48 +1,72 @@
----
 apiVersion: v1
-baseDomain: "{{ base_domain }}"
 metadata:
-  name: "{{ cluster_name }}"
-compute:
-  - name: worker
-    replicas: {{ groups['workers'] | default([]) | length }}
+  name: {{ cluster_name }}
+baseDomain: {{ base_domain }}
+
 controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
   name: master
   replicas: {{ groups['masters'] | length }}
+
+compute:
+  - architecture: amd64
+    hyperthreading: Enabled
+    name: worker
+    replicas: {{ groups['workers'] | default([]) | length }}
+
 networking:
-  networkType: "{{ network_type | default('OVNKubernetes') }}"
+  networkType: {{ network_type | default('OVNKubernetes') }}
   clusterNetwork:
-    - cidr: "{{ cluster_network_cidr | default('10.128.0.0/14') }}"
-      hostPrefix: {{ cluster_network_host_prefix | default(23) }}
-{% if machine_network_cidr is defined and machine_network_cidr | length > 0 %}
-  machineNetwork:
-    - cidr: "{{ machine_network_cidr }}"
-{% endif %}
+    - cidr: {{ cluster_network_cidr }}
+      hostPrefix: {{ cluster_network_host_prefix }}
   serviceNetwork:
-    - "{{ service_network_cidr | default('172.30.0.0/16') }}"
+    - {{ service_network_cidr }}
+{% if machine_network_cidr is defined and machine_network_cidr | trim | length > 0 %}
+  machineNetwork:
+    - cidr: {{ machine_network_cidr | trim }}
+{% endif %}
+
 platform:
+{% if platform_type is defined and platform_type == 'baremetal' %}
   baremetal:
+{% if api_vips is defined and api_vips | length > 0 %}
     apiVIPs:
-      - "{{ api_vip }}"
+{% for vip in api_vips %}
+      - {{ vip }}
+{% endfor %}
+{% endif %}
+{% if ingress_vips is defined and ingress_vips | length > 0 %}
     ingressVIPs:
-      - "{{ ingress_vip }}"
-{% if proxy_enabled | default(false) | bool %}
+{% for vip in ingress_vips %}
+      - {{ vip }}
+{% endfor %}
+{% endif %}
+{% elif platform_type is defined and platform_type == 'none' %}
+  none: {}
+{% endif %}
+
+pullSecret: '{{ (abi_pull_secret_content | from_json if abi_pull_secret_content is string else abi_pull_secret_content) | to_json }}'
+sshKey: '{{ abi_ssh_key_content | trim }}'
+{% if fips_enabled | default(false) | bool %}
+fips: true
+{% else %}
+fips: false
+{% endif %}
+{% if proxy_enabled | default(false) | bool and http_proxy is defined and http_proxy | length > 0 %}
+
 proxy:
-{% if http_proxy is defined and http_proxy | length > 0 %}
   httpProxy: "{{ http_proxy }}"
+  httpsProxy: "{{ https_proxy if (https_proxy | default('') | length > 0) else http_proxy }}"
+  noProxy: "{{ abi_computed_no_proxy }}"
 {% endif %}
-{% if https_proxy is defined and https_proxy | length > 0 %}
-  httpsProxy: "{{ https_proxy }}"
-{% endif %}
-{% if abi_computed_no_proxy_list is defined and abi_computed_no_proxy_list | length > 0 %}
-  noProxy: "{{ abi_computed_no_proxy_list | join(',') }}"
-{% endif %}
-{% endif %}
-pullSecret: >-
-  {{ abi_pull_secret_content | to_json if (abi_pull_secret_content is mapping) else (abi_pull_secret_content | string | trim) }}
-sshKey: |
-  {{ abi_ssh_key_content | indent(2, first=False) }}
-{% if abi_additional_trust_bundle_content is defined and abi_additional_trust_bundle_content | length > 0 %}
+{% if abi_trust_bundle_content is defined and abi_trust_bundle_content | trim | length > 0 and 'BEGIN CERTIFICATE' in abi_trust_bundle_content %}
+
 additionalTrustBundle: |
-  {{ abi_additional_trust_bundle_content | indent(2, first=False) }}
+{{ abi_trust_bundle_content | trim | indent(2, True) }}
+{% endif %}
+{% if disconnected_install | default(false) | bool and image_digest_sources is defined and image_digest_sources | length > 0 %}
+
+imageDigestSources:
+{{ image_digest_sources | to_nice_yaml(indent=2) | indent(2) }}
 {% endif %}
