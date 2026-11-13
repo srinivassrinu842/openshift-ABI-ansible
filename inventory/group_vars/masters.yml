@@ -1,3 +1,5 @@
 ---
-# Master / Control Plane Specific Defaults
-node_role: master
+# Variables specific to OpenShift Master (Control Plane) nodes
+control_plane_replicas: 3
+control_plane_architecture: amd64
+control_plane_hyperthreading: Enabled

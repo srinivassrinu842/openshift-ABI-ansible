@@ -1,20 +1,19 @@
 ---
-# ==============================================================================
-# Node Configuration: worker-02.example.com
-# Network Mode: Single NIC (non-bonding)
-# ==============================================================================
-role: worker
+# Compute Node 02 - Non-Bonded (Single Physical NIC) Setup
+node_role: "worker"
 
-rootDeviceHints:
-  deviceName: "/dev/sda"
+root_device_hints:
+  deviceName: "/dev/nvme0n1"
 
+# Demonstrating Non-Bonding Network Mode
 network_mode: "single_nic"
-interface_name: "eno1"
-mac_address: "52:54:00:bb:01:03"
 
-ip_address: "192.168.10.22"
-prefix_length: 24
-gateway: "192.168.10.1"
-dns_servers:
-  - "192.168.10.1"
-  - "1.1.1.1"
+nic_config:
+  name: "eno1"
+  mac: "52:54:00:20:02:01"
+  ip: "192.168.10.22"
+  prefix_length: 24
+  gateway: "192.168.10.1"
+  dns_servers:
+    - "192.168.10.1"
+    - "192.168.10.2"

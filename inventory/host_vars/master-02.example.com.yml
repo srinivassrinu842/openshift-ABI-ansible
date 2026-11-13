@@ -1,29 +1,25 @@
 ---
-# ==============================================================================
-# Node Configuration: master-02.example.com
-# Network Mode: 802.3ad LACP Bond (bond0)
-# ==============================================================================
-role: master
-is_rendezvous: false
+# Control Plane Node 02
+node_role: "master"
 
-rootDeviceHints:
+root_device_hints:
   deviceName: "/dev/sda"
 
 network_mode: "bond"
-bond_name: "bond0"
-bond_mode: "802.3ad"
-bond_lacp_rate: "fast"
-bond_miimon: 100
 
-bond_interfaces:
-  - name: "eno1"
-    mac_address: "52:54:00:aa:01:03"
-  - name: "eno2"
-    mac_address: "52:54:00:aa:01:04"
-
-ip_address: "192.168.10.12"
-prefix_length: 24
-gateway: "192.168.10.1"
-dns_servers:
-  - "192.168.10.1"
-  - "1.1.1.1"
+bond_config:
+  name: "bond0"
+  mode: "active-backup"
+  options:
+    miimon: "100"
+  interfaces:
+    - name: "enp1s0"
+      mac: "52:54:00:10:02:01"
+    - name: "enp2s0"
+      mac: "52:54:00:10:02:02"
+  ip: "192.168.10.12"
+  prefix_length: 24
+  gateway: "192.168.10.1"
+  dns_servers:
+    - "192.168.10.1"
+    - "192.168.10.2"

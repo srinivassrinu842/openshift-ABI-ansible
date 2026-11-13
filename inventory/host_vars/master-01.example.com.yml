@@ -1,33 +1,32 @@
 ---
-# ==============================================================================
-# Node Configuration: master-01.example.com (Rendezvous Node)
-# Network Mode: 802.3ad LACP Bond (bond0)
-# ==============================================================================
-role: master
-is_rendezvous: true
+# Rendezvous Node & Control Plane Node 01
+node_role: "master"
 
-# Disk targeting for RHCOS installation (quoted string for device names)
-rootDeviceHints:
+# Hardware storage target for CoreOS installation
+root_device_hints:
   deviceName: "/dev/sda"
+  # Other optional hints:
+  # wwn: "0x600508b400105e2100009000004c0000"
+  # serialNumber: "WD-WCC4N0123456"
+  # rotational: false
 
-# Network Interface Configuration (NMState YAML representation)
+# Network Mode: "bond" or "single_nic"
 network_mode: "bond"
-bond_name: "bond0"
-bond_mode: "802.3ad"
-bond_lacp_rate: "fast"
-bond_miimon: 100
 
-# Slave / Member NICs for the Bond
-bond_interfaces:
-  - name: "eno1"
-    mac_address: "52:54:00:aa:01:01"
-  - name: "eno2"
-    mac_address: "52:54:00:aa:01:02"
-
-# Static IP Settings for bond0
-ip_address: "192.168.10.11"
-prefix_length: 24
-gateway: "192.168.10.1"
-dns_servers:
-  - "192.168.10.1"
-  - "1.1.1.1"
+bond_config:
+  name: "bond0"
+  mode: "802.3ad"  # LACP (or "active-backup", "balance-xor")
+  options:
+    miimon: "100"
+    lacp_rate: "fast"
+  interfaces:
+    - name: "enp1s0"
+      mac: "52:54:00:10:01:01"
+    - name: "enp2s0"
+      mac: "52:54:00:10:01:02"
+  ip: "192.168.10.11"
+  prefix_length: 24
+  gateway: "192.168.10.1"
+  dns_servers:
+    - "192.168.10.1"
+    - "192.168.10.2"

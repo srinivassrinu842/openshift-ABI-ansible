@@ -1,7 +1,9 @@
 ---
-# Playbook 01: Render install-config.yaml, agent-config.yaml, and Day-0 manifests
-- name: Generate OpenShift Agent-Based Installer configurations
-  hosts: bastion
+- name: Render OpenShift Agent-Based Installer configurations
+  hosts: localhost
   gather_facts: false
   roles:
     - role: abi_config
+      tags:
+        - config
+        - manifests

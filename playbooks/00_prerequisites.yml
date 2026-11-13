@@ -1,7 +1,9 @@
 ---
-# Playbook 00: Pre-requisites & Environment Sanity
-- name: Validate environment and download OpenShift binaries
-  hosts: bastion
+- name: Validate environment prerequisites and binaries
+  hosts: localhost
   gather_facts: true
   roles:
     - role: abi_prereqs
+      tags:
+        - prereqs
+        - binaries

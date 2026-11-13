@@ -1,92 +1,122 @@
 ---
 # ==============================================================================
-# Global OpenShift Agent-Based Installer (ABI) Configuration
+# OpenShift Agent-Based Installer (ABI) - Global Cluster Configuration
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# 1. Project Paths & Versioning
+# 0. Base Project Directory Reference
 # ------------------------------------------------------------------------------
 abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') else (playbook_dir ~ '/..') }}"
-bin_dir: "{{ abi_project_root }}/bin"
-build_dir: "{{ abi_project_root }}/build"
-installer_work_dir: "{{ build_dir }}/installer_dir"
-iso_output_dir: "{{ build_dir }}/iso"
-
-# OpenShift Version to Install
-# Supported: "4.14.x", "4.15.x", "4.16.x", "4.22.22", "latest"
-ocp_version: "4.22.22"
-
-# Automated Binary Downloads (openshift-install & oc)
-download_binaries: true
-openshift_mirror_base_url: "https://mirror.openshift.com/pub/openshift-v4/clients/ocp"
 
 # ------------------------------------------------------------------------------
-# 2. Cluster Identity & Networking
+# 1. OpenShift Version & Client Binaries
+# ------------------------------------------------------------------------------
+# Set target OpenShift version (e.g. "4.16.14", "4.16.20", "4.15.25", "4.14.38", or "latest")
+ocp_version: "4.22.22"
+download_binaries: true
+bin_dir: "{{ abi_project_root }}/bin"
+ocp_mirror_base_url: "https://mirror.openshift.com/pub/openshift-v4/clients/ocp"
+
+# Optional: Override with custom direct URLs or internal enterprise repository
+# custom_installer_url: "https://my-nexus.corp.example.com/ocp/openshift-install-linux.tar.gz"
+# custom_client_url: "https://my-nexus.corp.example.com/ocp/openshift-client-linux.tar.gz"
+
+# ------------------------------------------------------------------------------
+# 2. Cluster Identity
 # ------------------------------------------------------------------------------
 cluster_name: "ocp-prod"
 base_domain: "example.com"
+cluster_fqdn: "{{ cluster_name }}.{{ base_domain }}"
 
-# Virtual IPs (Keepalived VIPs for Bare Metal)
-api_vip: "192.168.10.5"
-ingress_vip: "192.168.10.6"
+# ------------------------------------------------------------------------------
+# 3. Platform & Virtual IPs (VIPs)
+# ------------------------------------------------------------------------------
+# Supported platform_type: "baremetal" (built-in VIPs via keepalived) or "none" (external LB)
+platform_type: "none"
 
-# Machine Network CIDR (Required for baremetal agent-config & install-config)
-machine_network_cidr: "192.168.10.0/24"
+# Virtual IPs for API and Ingress (required for platform_type: baremetal)
+# If platform_type is "none", these can be omitted.
+api_vips:
+  - "192.168.10.5"
+ingress_vips:
+  - "192.168.10.6"
 
-# Cluster & Service Networks (OVN-Kubernetes Defaults)
-cluster_network_cidr: "10.128.0.0/14"
-cluster_network_host_prefix: 23
-service_network_cidr: "172.30.0.0/16"
+# ------------------------------------------------------------------------------
+# 4. Agent-Based Installer Rendezvous Node
+# ------------------------------------------------------------------------------
+# The rendezvous node is the first master node that starts the embedded Assisted Service.
+# This IP must match one of the master node IP addresses.
+rendezvous_ip: "192.168.10.11"
+
+# ------------------------------------------------------------------------------
+# 5. Core Cluster Networking
+# ------------------------------------------------------------------------------
 network_type: "OVNKubernetes"
+cluster_network_cidr: "100.96.0.0/14"
+cluster_network_host_prefix: 21
+service_network_cidr: "100.100.0.0/16"
+
+# Machine network CIDR is OPTIONAL in OpenShift.
+# If omitted or set to empty string (""), machineNetwork will NOT be included in install-config.yaml.
+#machine_network_cidr: "192.168.10.0/24"
+machine_network_cidr: ""
 
 # ------------------------------------------------------------------------------
-# 3. Credentials & Keys
+# 6. Day-0 Manifests & Additional Custom Configurations
 # ------------------------------------------------------------------------------
-# Path to Red Hat Pull Secret (Downloaded from console.redhat.com)
-pull_secret_file: "{{ abi_project_root }}/pull-secret.txt"
-
-# Path to SSH Public Key for CoreOS Node Access
-ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
-# Optional fallback if file is not used:
-# ssh_public_key: "ssh-rsa AAAA..."
-
-# ------------------------------------------------------------------------------
-# 4. Proxy Configuration (Enterprise Corporate Proxy)
-# ------------------------------------------------------------------------------
-# Set proxy_enabled to true if cluster nodes need an egress proxy to reach Red Hat / Internet
-proxy_enabled: false
-http_proxy: "http://proxy.example.com:8080"
-https_proxy: "http://proxy.example.com:8080"
-# Mandatory default no_proxy domains (cluster.local, 127.0.0.1, localhost, base_domain, machine_network_cidr)
-# Additional custom no_proxy domains can be added below:
-user_no_proxy_domains:
-  - ".corp.example.com"
-  - "192.168.0.0/16"
-
-# ------------------------------------------------------------------------------
-# 5. Additional Trusted Certificates (Enterprise Root/Intermediate CAs)
-# ------------------------------------------------------------------------------
-# If specified and file exists, contents will be embedded as additionalTrustBundle
-# in install-config.yaml for custom registry or proxy interception certificates.
-additional_trust_bundle_file: ""
-
-# ------------------------------------------------------------------------------
-# 6. Custom Day-0 Manifests Directory
-# ------------------------------------------------------------------------------
-# Any *.yaml / *.yml files in this directory are automatically copied into
-# <install_dir>/openshift/ to be baked into Day-0 release ignition.
+# Any *.yaml or *.yml files placed in this directory are automatically copied
+# into <install_dir>/openshift/ and baked into the bootable ISO.
 day0_manifests_dir: "{{ abi_project_root }}/manifests"
 
 # ------------------------------------------------------------------------------
-# 7. Time Synchronization (NTP / Chrony)
+# 7. Enterprise Proxy Configuration
 # ------------------------------------------------------------------------------
-# Upstream NTP servers configured on all nodes
-ntp_servers:
-  - "192.168.10.1"
-  - "time.cloudflare.com"
+# If proxy_enabled is false, or http_proxy is empty/omitted, NO proxy block is included in install-config.yaml.
+proxy_enabled: false
+http_proxy: ""
+https_proxy: ""
+# Custom no_proxy entries to append to default list (.cluster.local, 127.0.0.1, .basedomain, machine cidr, etc.)
+custom_no_proxy: []
 
 # ------------------------------------------------------------------------------
-# 8. ISO Build Options
+# 8. Enterprise Security & Trust
 # ------------------------------------------------------------------------------
-# Minimum number of masters required to proceed with installation
-min_master_nodes: 3
+fips_enabled: false
+
+# Enterprise CA Certificate / Internal Registry CA (PEM format)
+# If both additional_trust_bundle_file and additional_trust_bundle_raw are empty/omitted,
+# additionalTrustBundle will NOT be included in install-config.yaml.
+additional_trust_bundle_file: "/Users/sreenichenna/Downloads/projects/RedHat/FedNet/redhat-uep.pem"
+additional_trust_bundle_raw: ""
+
+# Red Hat Pull Secret (Raw string or path to file)
+pull_secret_file: "{{ abi_project_root }}/pull-secret.txt"
+pull_secret_raw: ""
+
+# Cluster SSH Public Key for core user
+ssh_public_key_file: "~/.ssh/id_ed25519.pub"
+ssh_public_key_raw: ""
+
+# ------------------------------------------------------------------------------
+# 9. Enterprise Time Synchronization (NTP)
+# ------------------------------------------------------------------------------
+# If additional_ntp_sources is omitted or empty, additionalNTPSources will NOT be included in agent-config.yaml.
+additional_ntp_sources:
+  - "192.168.10.1"
+  - "time.corp.example.com"
+
+# ------------------------------------------------------------------------------
+# 10. Disconnected / Air-gapped Registry Mirroring (Optional)
+# ------------------------------------------------------------------------------
+# If disconnected_install is false or image_digest_sources is empty/omitted,
+# imageDigestSources will NOT be included in install-config.yaml.
+disconnected_install: false
+image_digest_sources: []
+
+# ------------------------------------------------------------------------------
+# 11. Staging & Output Directories
+# ------------------------------------------------------------------------------
+abi_workspace_dir: "{{ abi_project_root }}/build"
+abi_install_dir: "{{ abi_workspace_dir }}/installer_dir"
+abi_backup_dir: "{{ abi_workspace_dir }}/rendered_configs"
+abi_iso_output_dir: "{{ abi_workspace_dir }}/iso"

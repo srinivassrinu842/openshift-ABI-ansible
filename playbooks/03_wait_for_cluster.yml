@@ -1,7 +1,9 @@
 ---
-# Playbook 03: Monitor installation progress and retrieve cluster credentials
-- name: Monitor OpenShift installation progress
-  hosts: bastion
+- name: Monitor OpenShift cluster bootstrap and installation
+  hosts: localhost
   gather_facts: false
   roles:
     - role: abi_monitor
+      tags:
+        - monitor
+        - wait

@@ -1,27 +1,26 @@
 ---
-# ==============================================================================
-# Node Configuration: worker-01.example.com
-# Network Mode: active-backup Bond (bond0)
-# ==============================================================================
-role: worker
+# Compute Node 01 - Bonded LACP Setup
+node_role: "worker"
 
-rootDeviceHints:
-  deviceName: "/dev/sda"
+root_device_hints:
+  deviceName: "/dev/nvme0n1"
 
 network_mode: "bond"
-bond_name: "bond0"
-bond_mode: "active-backup"
-bond_miimon: 100
 
-bond_interfaces:
-  - name: "ens1f0"
-    mac_address: "52:54:00:bb:01:01"
-  - name: "ens1f1"
-    mac_address: "52:54:00:bb:01:02"
-
-ip_address: "192.168.10.21"
-prefix_length: 24
-gateway: "192.168.10.1"
-dns_servers:
-  - "192.168.10.1"
-  - "1.1.1.1"
+bond_config:
+  name: "bond0"
+  mode: "802.3ad"
+  options:
+    miimon: "100"
+    lacp_rate: "fast"
+  interfaces:
+    - name: "enp1s0"
+      mac: "52:54:00:20:01:01"
+    - name: "enp2s0"
+      mac: "52:54:00:20:01:02"
+  ip: "192.168.10.21"
+  prefix_length: 24
+  gateway: "192.168.10.1"
+  dns_servers:
+    - "192.168.10.1"
+    - "192.168.10.2"

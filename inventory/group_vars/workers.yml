@@ -1,3 +1,5 @@
 ---
-# Worker Node Specific Defaults
-node_role: worker
+# Variables specific to OpenShift Worker (Compute) nodes
+compute_replicas: 2
+compute_architecture: amd64
+compute_hyperthreading: Enabled
