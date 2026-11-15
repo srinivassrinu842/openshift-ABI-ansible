@@ -8,21 +8,36 @@
     path: "{{ openshift_install_bin }}"
   register: abi_check_install_bin
 
-- name: Check if oc binary is available
+- name: Check if oc binary is available in bin_dir
   ansible.builtin.stat:
     path: "{{ oc_bin }}"
   register: abi_check_oc_bin
+
+- name: Check oc binary in system PATH if not in bin_dir
+  ansible.builtin.command: which oc
+  register: abi_monitor_oc_which
+  changed_when: false
+  failed_when: false
+  when: not (abi_check_oc_bin.stat.exists | default(false))
 
 - name: Assert binaries exist for cluster monitoring
   ansible.builtin.assert:
     that:
       - abi_check_install_bin.stat.exists
-      - abi_check_oc_bin.stat.exists
-    fail_msg: "Required binaries openshift-install or oc not found in {{ bin_dir }}."
+      - abi_check_oc_bin.stat.exists or (abi_monitor_oc_which.rc | default(1) == 0)
+    fail_msg: "Required binaries openshift-install or oc not found in {{ bin_dir }} or system PATH."
 
 - name: Wait for OpenShift bootstrap phase completion
   ansible.builtin.command:
     cmd: "{{ openshift_install_bin }} agent wait-for bootstrap-complete --dir {{ abi_install_dir }} --log-level=info"
+  environment:
+    PATH: "{{ bin_dir }}:{{ lookup('env', 'PATH') }}"
+    HTTP_PROXY: "{{ http_proxy | default(omit) if (proxy_enabled | default(false) | bool and (http_proxy | default('') | length > 0)) else omit }}"
+    HTTPS_PROXY: "{{ https_proxy | default(omit) if (proxy_enabled | default(false) | bool and (https_proxy | default('') | length > 0)) else omit }}"
+    NO_PROXY: "{{ (custom_no_proxy | default([]) | join(',')) if (proxy_enabled | default(false) | bool and (custom_no_proxy | default([]) | length > 0)) else omit }}"
+    http_proxy: "{{ http_proxy | default(omit) if (proxy_enabled | default(false) | bool and (http_proxy | default('') | length > 0)) else omit }}"
+    https_proxy: "{{ https_proxy | default(omit) if (proxy_enabled | default(false) | bool and (https_proxy | default('') | length > 0)) else omit }}"
+    no_proxy: "{{ (custom_no_proxy | default([]) | join(',')) if (proxy_enabled | default(false) | bool and (custom_no_proxy | default([]) | length > 0)) else omit }}"
   register: abi_bootstrap_output
   changed_when: false
 
@@ -33,6 +48,14 @@
 - name: Wait for OpenShift cluster installation completion
   ansible.builtin.command:
     cmd: "{{ openshift_install_bin }} agent wait-for install-complete --dir {{ abi_install_dir }} --log-level=info"
+  environment:
+    PATH: "{{ bin_dir }}:{{ lookup('env', 'PATH') }}"
+    HTTP_PROXY: "{{ http_proxy | default(omit) if (proxy_enabled | default(false) | bool and (http_proxy | default('') | length > 0)) else omit }}"
+    HTTPS_PROXY: "{{ https_proxy | default(omit) if (proxy_enabled | default(false) | bool and (https_proxy | default('') | length > 0)) else omit }}"
+    NO_PROXY: "{{ (custom_no_proxy | default([]) | join(',')) if (proxy_enabled | default(false) | bool and (custom_no_proxy | default([]) | length > 0)) else omit }}"
+    http_proxy: "{{ http_proxy | default(omit) if (proxy_enabled | default(false) | bool and (http_proxy | default('') | length > 0)) else omit }}"
+    https_proxy: "{{ https_proxy | default(omit) if (proxy_enabled | default(false) | bool and (https_proxy | default('') | length > 0)) else omit }}"
+    no_proxy: "{{ (custom_no_proxy | default([]) | join(',')) if (proxy_enabled | default(false) | bool and (custom_no_proxy | default([]) | length > 0)) else omit }}"
   register: abi_install_output
   changed_when: false
 

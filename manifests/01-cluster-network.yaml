@@ -3,18 +3,15 @@ kind: Network
 metadata:
   name: cluster
 spec:
-  clusterNetwork:
-  - cidr: 100.96.0.0/14
-    hostPrefix: 21
-  externalIP:
-    policy: {}
-  networkType: OVNKubernetes
-  serviceNetwork:
-  - 100.100.0.0/16
   defaultNetwork:
     type: OVNKubernetes
     ovnKubernetesConfig:
       ipv4:
-        internalJoinSubnet: 100.101.0.0/16
-        internalTransitSwitchSubnet: 100.102.0.0/16
+        internalJoinSubnet: "100.101.0.0/16"
+        internalTransitSwitchSubnet: "100.102.0.0/16"
+      gatewayConfig:
+        routingViaHost: true
+        ipForwarding: Global
+        ipv4:
+          internalMasqueradeSubnet: "169.254.0.0/17"
 status: {}
