@@ -1,4 +1,3 @@
----
 apiVersion: v1beta1
 kind: AgentConfig
 metadata:
@@ -11,67 +10,89 @@ additionalNTPSources:
 {% endfor %}
 {% endif %}
 hosts:
-{% for host in groups['masters'] | default([]) %}
-{% set hvars = hostvars[host] %}
-  - hostname: {{ host }}
-    role: master
-{% if hvars.root_device_hints is defined and hvars.root_device_hints %}
+{% for node in (groups['masters'] + groups['workers'] | default([])) %}
+  - hostname: {{ node }}
+    role: {{ hostvars[node].node_role | default('master' if node in groups['masters'] else 'worker') }}
+{% if hostvars[node].root_device_hints is defined and hostvars[node].root_device_hints %}
     rootDeviceHints:
-{% for k, v in hvars.root_device_hints.items() %}
-{% if v is string %}
-      {{ k }}: "{{ v }}"
+{% for hint_k, hint_v in hostvars[node].root_device_hints.items() %}
+{% if hint_v is boolean %}
+      {{ hint_k }}: {{ hint_v | lower }}
+{% elif hint_v is number %}
+      {{ hint_k }}: {{ hint_v }}
 {% else %}
-      {{ k }}: {{ v }}
+      {{ hint_k }}: "{{ hint_v }}"
 {% endif %}
 {% endfor %}
 {% endif %}
     interfaces:
-{% if hvars.network_mode | default('bond') == 'bond' %}
-{% for iface in hvars.bond_config.interfaces %}
+{% if hostvars[node].network_mode == 'bond' %}
+{% for iface in hostvars[node].bond_config.interfaces %}
       - name: {{ iface.name }}
-        macAddress: "{{ iface.mac }}"
+        macAddress: "{{ iface.mac | lower }}"
 {% endfor %}
 {% else %}
-      - name: {{ hvars.nic_config.name }}
-        macAddress: "{{ hvars.nic_config.mac }}"
+      - name: {{ hostvars[node].nic_config.name }}
+        macAddress: "{{ hostvars[node].nic_config.mac | lower }}"
 {% endif %}
     networkConfig:
-      raw:
-{% if hvars.network_mode | default('bond') == 'bond' %}
-{{ lookup('template', 'nmstate-bond.yaml.j2') | indent(8, True) }}
-{% else %}
-{{ lookup('template', 'nmstate-nic.yaml.j2') | indent(8, True) }}
-{% endif %}
+      interfaces:
+{% if hostvars[node].network_mode == 'bond' %}
+{% for iface in hostvars[node].bond_config.interfaces %}
+        - name: {{ iface.name }}
+          type: ethernet
+          state: up
+          mac-address: "{{ iface.mac | lower }}"
 {% endfor %}
-{% for host in groups['workers'] | default([]) %}
-{% set hvars = hostvars[host] %}
-  - hostname: {{ host }}
-    role: worker
-{% if hvars.root_device_hints is defined and hvars.root_device_hints %}
-    rootDeviceHints:
-{% for k, v in hvars.root_device_hints.items() %}
-{% if v is string %}
-      {{ k }}: "{{ v }}"
-{% else %}
-      {{ k }}: {{ v }}
-{% endif %}
+        - name: {{ hostvars[node].bond_config.name }}
+          type: bond
+          state: up
+          link-aggregation:
+            mode: {{ hostvars[node].bond_config.mode | default('802.3ad') }}
+            port:
+{% for iface in hostvars[node].bond_config.interfaces %}
+              - {{ iface.name }}
+{% endfor %}
+{% if hostvars[node].bond_config.options is defined and hostvars[node].bond_config.options %}
+            options:
+{% for opt_k, opt_v in hostvars[node].bond_config.options.items() %}
+              {{ opt_k }}: "{{ opt_v }}"
 {% endfor %}
 {% endif %}
-    interfaces:
-{% if hvars.network_mode | default('bond') == 'bond' %}
-{% for iface in hvars.bond_config.interfaces %}
-      - name: {{ iface.name }}
-        macAddress: "{{ iface.mac }}"
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: {{ hostvars[node].bond_config.ip }}
+                prefix-length: {{ hostvars[node].bond_config.prefix_length | int }}
+{% else %}
+        - name: {{ hostvars[node].nic_config.name }}
+          type: ethernet
+          state: up
+          mac-address: "{{ hostvars[node].nic_config.mac | lower }}"
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: {{ hostvars[node].nic_config.ip }}
+                prefix-length: {{ hostvars[node].nic_config.prefix_length | int }}
+{% endif %}
+      dns-resolver:
+        config:
+          server:
+{% if hostvars[node].network_mode == 'bond' %}
+{% for dns in hostvars[node].bond_config.dns_servers %}
+            - {{ dns }}
 {% endfor %}
 {% else %}
-      - name: {{ hvars.nic_config.name }}
-        macAddress: "{{ hvars.nic_config.mac }}"
+{% for dns in hostvars[node].nic_config.dns_servers %}
+            - {{ dns }}
+{% endfor %}
 {% endif %}
-    networkConfig:
-      raw:
-{% if hvars.network_mode | default('bond') == 'bond' %}
-{{ lookup('template', 'nmstate-bond.yaml.j2') | indent(8, True) }}
-{% else %}
-{{ lookup('template', 'nmstate-nic.yaml.j2') | indent(8, True) }}
-{% endif %}
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: {{ hostvars[node].bond_config.gateway if hostvars[node].network_mode == 'bond' else hostvars[node].nic_config.gateway }}
+            next-hop-interface: {{ hostvars[node].bond_config.name if hostvars[node].network_mode == 'bond' else hostvars[node].nic_config.name }}
+            table-id: 254
 {% endfor %}

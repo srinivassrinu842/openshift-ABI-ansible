@@ -15,7 +15,7 @@ abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') e
 ocp_version: "4.22.22"
 download_binaries: true
 bin_dir: "{{ abi_project_root }}/bin"
-ocp_mirror_base_url: "https://mirror.openshift.com/pub/openshift-v4/clients/ocp"
+ocp_mirror_base_url: "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp"
 
 # Optional: Override with custom direct URLs or internal enterprise repository
 # custom_installer_url: "https://my-nexus.corp.example.com/ocp/openshift-install-linux.tar.gz"

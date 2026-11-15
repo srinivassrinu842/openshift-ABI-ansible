@@ -1,10 +1,18 @@
 ---
 # Defaults for abi_prereqs role
 abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') else (playbook_dir ~ '/..') }}"
-bin_dir: "{{ abi_project_root }}/bin"
-ocp_version: "4.22.22"
 download_binaries: true
-ocp_mirror_base_url: "https://mirror.openshift.com/pub/openshift-v4/clients/ocp"
+ocp_version: "4.16.14"
+bin_dir: "{{ abi_project_root }}/bin"
+ocp_mirror_base_url: "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp"
 
-# Temporary extraction directory for downloaded archives
-abi_download_tmp_dir: "{{ lookup('env', 'TMPDIR') | default('/tmp', true) }}"
+# Force redownload even if binaries exist
+force_download_binaries: false
+
+# Directory permissions
+bin_dir_mode: "0755"
+
+# Expected tools
+required_tools:
+  - openshift-install
+  - oc
