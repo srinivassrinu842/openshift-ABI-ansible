@@ -9,14 +9,50 @@
   register: abi_installer_stat
   failed_when: not abi_installer_stat.stat.exists or not abi_installer_stat.stat.executable
 
-- name: Assert installer staging directory exists with required configurations
+- name: Check if install-config.yaml exists in installer staging directory
+  ansible.builtin.stat:
+    path: "{{ installer_work_dir }}/install-config.yaml"
+  register: abi_stat_ic
+
+- name: Restore install-config.yaml from backup if consumed by previous build
+  ansible.builtin.copy:
+    src: "{{ build_dir }}/rendered_configs/install-config.yaml"
+    dest: "{{ installer_work_dir }}/install-config.yaml"
+    mode: "0600"
+  when:
+    - not abi_stat_ic.stat.exists
+    - (build_dir ~ '/rendered_configs/install-config.yaml') is file
+
+- name: Check if agent-config.yaml exists in installer staging directory
+  ansible.builtin.stat:
+    path: "{{ installer_work_dir }}/agent-config.yaml"
+  register: abi_stat_ac
+
+- name: Restore agent-config.yaml from backup if consumed by previous build
+  ansible.builtin.copy:
+    src: "{{ build_dir }}/rendered_configs/agent-config.yaml"
+    dest: "{{ installer_work_dir }}/agent-config.yaml"
+    mode: "0600"
+  when:
+    - not abi_stat_ac.stat.exists
+    - (build_dir ~ '/rendered_configs/agent-config.yaml') is file
+
+- name: Check required configuration files in installer staging directory
   ansible.builtin.stat:
     path: "{{ installer_work_dir }}/{{ item }}"
   loop:
     - install-config.yaml
     - agent-config.yaml
   register: abi_config_stats
-  failed_when: not item.stat.exists
+
+- name: Assert required configuration files exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Required configuration file '{{ item.item }}' was not found in {{ installer_work_dir }}."
+  loop: "{{ abi_config_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 
 - name: Create ISO output directory
   ansible.builtin.file:

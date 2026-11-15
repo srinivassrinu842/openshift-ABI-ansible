@@ -4,9 +4,9 @@
 # ==============================================================================
 abi_project_root: "{{ playbook_dir if (playbook_dir | basename != 'playbooks') else (playbook_dir ~ '/..') }}"
 bin_dir: "{{ abi_project_root }}/bin"
-build_dir: "{{ abi_project_root }}/build"
-installer_work_dir: "{{ build_dir }}/installer_dir"
-iso_output_dir: "{{ build_dir }}/iso"
+build_dir: "{{ abi_workspace_dir | default(abi_project_root ~ '/build') }}"
+installer_work_dir: "{{ abi_install_dir | default(build_dir ~ '/installer_dir') }}"
+iso_output_dir: "{{ abi_iso_output_dir | default(build_dir ~ '/iso') }}"
 
 cluster_name: "ocp-prod"
 openshift_install_binary: "{{ bin_dir }}/openshift-install"
